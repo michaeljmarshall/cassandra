@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.base.MoreObjects;
 import org.slf4j.Logger;
@@ -77,6 +78,8 @@ import static java.lang.Math.min;
 public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrdering
 {
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
+    private final AtomicLong switcher = new AtomicLong(0);
 
     private final JVectorLuceneOnDiskGraph graph;
     private final PrimaryKey.Factory keyFactory;
@@ -271,8 +274,9 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
 
     private CloseableIterator<ScoredRowId> orderByBruteForce(float[] queryVector, IntArrayList segmentRowIds, int limit, int topK) throws IOException
     {
-        if (graph.getCompressedVectors() != null)
-            return orderByBruteForce(graph.getCompressedVectors(), queryVector, segmentRowIds, limit, topK);
+        var num = switcher.getAndIncrement();
+        if (graph.getCompressedVectors() != null && num % 3 != 0)
+            return orderByBruteForce(graph.getCompressedVectors(), queryVector, segmentRowIds, limit, topK, num);
         return orderByBruteForce(queryVector, segmentRowIds);
     }
 
@@ -285,12 +289,25 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
                                                              float[] queryVector,
                                                              IntArrayList segmentRowIds,
                                                              int limit,
-                                                             int topK) throws IOException
+                                                             int topK,
+                                                             long num) throws IOException
     {
         var approximateScores = new PriorityQueue<BruteForceRowIdIterator.RowWithApproximateScore>(segmentRowIds.size(),
                                                                                                    (a, b) -> Float.compare(b.getApproximateScore(), a.getApproximateScore()));
         var similarityFunction = indexContext.getIndexWriterConfig().getSimilarityFunction();
-        var scoreFunction = cv.approximateScoreFunctionFor(queryVector, similarityFunction);
+
+        // variables
+        // time to compare x vectors. the dimensions will all be the same, so we don't worry about those
+        // time to do non-ADC approx
+        // time to do ADC approx
+        // could assume that it is distributed as three ranges where the input is the number of vectors
+        // function goes from number of vectors to ??
+
+        // we're looking for two points such that below both is brute, in between them is non ADC, and above both is ADC.
+        // we could
+        // near the boundary, how do we decide??
+        var now = System.nanoTime();
+        var scoreFunction = cv.approximateScoreFunctionFor(queryVector, similarityFunction, num % 3 == 1);
 
         try (var ordinalsView = graph.getOrdinalsView())
         {
@@ -305,8 +322,39 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
                 approximateScores.add(new BruteForceRowIdIterator.RowWithApproximateScore(segmentRowId, ordinal, score));
             }
         }
+        // we know
+        // 1. the cost to approximately score x vectors using ADC, using non-ADC
+        // 2. the difference with ADC and non-ADC is mostly in the load time
+        // we assume
+        // precomputation of ADC provides better incremental cost, but has a large up front cost
+        // we can measure the upfront cost of the one, but does it matter?
+        // 1. brute force full res is just num vectors * time to compare those vectors
+        // 2. brute force ADC without pre-comp will take longer to do the comps, but no up front cost
+        // 3. brute force ADC with pre-comp pays an up front penalty and then goes faster
+        // 2 and 3 both require us to do full res comp on the top K.
+        // the point where 3 becomes better than 2 is when the load time for pre computation is
+        // better than the duration of vector comparisons.
+        // presumably there is a point in 1 where we want to do more than topK because
+        // the pass to do approx is expensive
+
+        // in the first pass, we could skip considerations about "requerying" because we don't
+        // know how deep we'll go, and we'll never know that detail.
+        // though you could imagine having a tracker for the frequency of how many vectors are consumed
+
+        // then there is the question of warm up. when we are starting from scratch, which inflection
+        // points do we go with?
+
+        // the linear cost is vector comparison... num vectors means more cost
+
         var reranker = new CloseableReranker(similarityFunction, queryVector, graph.getVectorSupplier());
-        return new BruteForceRowIdIterator(approximateScores, reranker, limit, topK);
+        var x = new BruteForceRowIdIterator(approximateScores, reranker, limit, topK);
+        if (!x.hasNext())
+            throw new IllegalStateException("No results found");
+        var end = System.nanoTime();
+        var duration = (end - now);
+        var perVector = duration / segmentRowIds.size();
+        System.out.println(segmentRowIds.size() + " vectors, duration: " + duration / 1_000_000.0 + " ms, " + perVector +" ns/vec " + (num % 3 == 1) + " k:" + topK + " l:" + limit);
+        return x;
     }
 
     /**
@@ -317,7 +365,12 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     private CloseableIterator<ScoredRowId> orderByBruteForce(float[] queryVector, IntArrayList segmentRowIds) throws IOException
     {
         PriorityQueue<ScoredRowId> scoredRowIds = new PriorityQueue<>(segmentRowIds.size(), (a, b) -> Float.compare(b.getScore(), a.getScore()));
+        var start = System.nanoTime();
         addScoredRowIdsToCollector(queryVector, segmentRowIds, 0, scoredRowIds);
+        var end = System.nanoTime();
+        var duration = (end - start);
+        var perVector = duration / segmentRowIds.size();
+        System.out.println(segmentRowIds.size() + " vectors, duration: " + (duration / 1_000_000.0) + " ms, " + perVector + " ns/vec");
         return new PriorityQueueIterator<>(scoredRowIds);
     }
 
@@ -616,3 +669,35 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         graph.close();
     }
 }
+
+// limit 100
+// ADC without precomputation
+//  1293 vectors, duration 0.885229 ms, 684 ns/vector
+//  403 vectors, duration 0.820164 ms, 2035 ns/vector
+//  16 vectors, duration 0.070439 ms, 4402 ns/vector
+//  763 vectors, duration 0.726326 ms, 951 ns/vector
+//  1281 vectors, duration 0.894534 ms, 698 ns/vector
+//  804 vectors, duration 0.748129 ms, 930 ns/vector
+//  1281 vectors, duration 0.934723 ms, 729 ns/vector
+//  895 vectors, duration 0.788665 ms, 881 ns/vector
+//  811 vectors, duration 0.726879 ms, 896 ns/vector
+// No ADC
+//  1293 vectors, duration 2.094814 ms, 1620
+//  403 vectors, duration 0.799447 ms, 1983 ns/vector
+//  16 vectors, duration 0.032568 ms, 2035 ns/vector
+//  763 vectors, duration 1.238778 ms, 1623 ns/vector
+//  1281 vectors, duration 1.993468 ms, 1556 ns/vector
+//  804 vectors, duration 1.281994 ms, 1594 ns/vector
+//  1281 vectors, duration 1.995685 ms, 1557 ns/vector
+//  895 vectors, duration 1.623675 ms, 1814 ns/vector
+//  811 vectors, duration 1.367859 ms, 1686 ns/vector
+// ADC with precomuptation
+//  1293 vectors, duration 0.887534 ms, 686 ns/vector
+//  403 vectors, duration 0.845149 ms, 2097 ns/vector
+//  16 vectors, duration 0.066644 ms, 4165 ns/vector
+//  763 vectors, duration 0.721079 ms, 945 ns/vector
+//  1281 vectors, duration 0.869849 ms, 679 ns/vector
+//  804 vectors, duration 0.779734 ms, 969 ns/vector
+//  1281 vectors, duration 0.914932 ms, 714 ns/vector
+//  895 vectors, duration 0.7556 844 ms, ns/vector
+//  811 vectors, duration 0.818739 ms, 1009 ns/vector
