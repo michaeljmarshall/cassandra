@@ -25,25 +25,47 @@ import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
 /**
- * A PrimaryKey with a score. The score is not used to determine equality or hash code because the same PrimaryKey
- * could have different scores depending on the source sstable/index.
+ * A PrimaryKey with one piece of metadata. The metadata is not used to determine equality or hash code because the
+ * same PrimaryKey could have different scores depending on the source sstable/index.
  */
-public class ScoredPrimaryKey implements PrimaryKey
+// TODO I had this originally, but the Plan class required primary key. Which is better?
+// My main design concern is mixing the way that PrimaryKeys are compared and making the code base a bit confusing.
+//public abstract class PrimaryKeyWithSortKey implements Comparable<PrimaryKeyWithSortKey>
+public abstract class PrimaryKeyWithSortKey implements PrimaryKey
 {
-    public final PrimaryKey primaryKey;
-    public final float score;
+    protected final PrimaryKey primaryKey;
 
-    public ScoredPrimaryKey(PrimaryKey primaryKey, float score)
+    public PrimaryKeyWithSortKey(PrimaryKey primaryKey)
     {
         this.primaryKey = primaryKey;
-        this.score = score;
     }
 
-    public float getScore()
+    public PrimaryKey primaryKey()
     {
-        return score;
+        return primaryKey;
     }
 
+    @Override
+    public final int hashCode()
+    {
+        // We do not want the score to affect the hash code because
+        // the same Primary Key could have different scores depending
+        // on the source sstable/index.
+        return primaryKey.hashCode();
+    }
+
+    @Override
+    public final boolean equals(Object obj)
+    {
+        if (!(obj instanceof PrimaryKeyWithSortKey))
+            return false;
+
+        // todo this ignores the sort key, is that right?
+        return primaryKey.equals(((PrimaryKeyWithSortKey) obj).primaryKey());
+    }
+
+
+    // Generic primary key wrapper methods:
     @Override
     public Token token()
     {
@@ -86,24 +108,4 @@ public class ScoredPrimaryKey implements PrimaryKey
         return primaryKey.asComparableBytesMaxPrefix(version);
     }
 
-    @Override
-    public int compareTo(PrimaryKey o)
-    {
-        return primaryKey.compareTo(o);
-    }
-
-    @Override
-    public int hashCode()
-    {
-        // We do not want the score to affect the hash code because
-        // the same Primary Key could have different scores depending
-        // on the source sstable/index.
-        return primaryKey.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj)
-    {
-        return primaryKey.equals(obj);
-    }
 }

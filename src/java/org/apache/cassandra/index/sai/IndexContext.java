@@ -36,7 +36,6 @@ import javax.annotation.Nullable;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableSet;
-import org.apache.cassandra.service.ClientWarn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,7 +73,7 @@ import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeAntiJoinIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.RangeUnionIterator;
-import org.apache.cassandra.index.sai.utils.ScoredPrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.index.sai.view.IndexViewManager;
 import org.apache.cassandra.index.sai.view.View;
@@ -438,14 +437,14 @@ public class IndexContext
         return builder.build();
     }
 
-    public List<CloseableIterator<ScoredPrimaryKey>> orderMemtable(QueryContext context, Expression e, AbstractBounds<PartitionPosition> keyRange, int limit)
+    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderMemtable(QueryContext context, Expression e, AbstractBounds<PartitionPosition> keyRange, int limit)
     {
         Collection<MemtableIndex> memtables = liveMemtables.values();
 
         if (memtables.isEmpty())
             return List.of();
 
-        var result = new ArrayList<CloseableIterator<ScoredPrimaryKey>>(memtables.size());
+        var result = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(memtables.size());
 
         for (MemtableIndex index : memtables)
             result.add(index.orderBy(context, e, keyRange, limit));
@@ -472,14 +471,14 @@ public class IndexContext
     }
 
     // Search all memtables for all PrimaryKeys in list.
-    public List<CloseableIterator<ScoredPrimaryKey>> orderResultsBy(QueryContext context, List<PrimaryKey> source, Expression e, int limit)
+    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderResultsBy(QueryContext context, List<PrimaryKey> source, Expression e, int limit)
     {
         Collection<MemtableIndex> memtables = liveMemtables.values();
 
         if (memtables.isEmpty())
             return List.of();
 
-        List<CloseableIterator<ScoredPrimaryKey>> result = new ArrayList<>(memtables.size());
+        List<CloseableIterator<? extends PrimaryKeyWithSortKey>> result = new ArrayList<>(memtables.size());
         for (MemtableIndex index : memtables)
             result.add(index.orderResultsBy(context, source, e, limit));
 

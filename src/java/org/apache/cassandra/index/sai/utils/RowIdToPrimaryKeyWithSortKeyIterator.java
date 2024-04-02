@@ -20,7 +20,6 @@ package org.apache.cassandra.index.sai.utils;
 
 import org.apache.cassandra.index.sai.disk.IndexSearcherContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
-import org.apache.cassandra.index.sai.disk.vector.ScoredRowId;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
@@ -29,15 +28,15 @@ import org.apache.cassandra.utils.CloseableIterator;
  * An iterator over scored primary keys ordered by the score descending
  * Not skippable.
  */
-public class ScoredRowIdPrimaryKeyMapIterator extends AbstractIterator<ScoredPrimaryKey>
+public class RowIdToPrimaryKeyWithSortKeyIterator extends AbstractIterator<PrimaryKeyWithSortKey>
 {
     private final PrimaryKeyMap primaryKeyMap;
-    private final CloseableIterator<ScoredRowId> scoredRowIdIterator;
+    private final CloseableIterator<? extends RowIdWithMeta> scoredRowIdIterator;
     private final IndexSearcherContext searcherContext;
 
-    public ScoredRowIdPrimaryKeyMapIterator(CloseableIterator<ScoredRowId> scoredRowIdIterator,
-                                            PrimaryKeyMap primaryKeyMap,
-                                            IndexSearcherContext context)
+    public RowIdToPrimaryKeyWithSortKeyIterator(CloseableIterator<? extends RowIdWithMeta> scoredRowIdIterator,
+                                                PrimaryKeyMap primaryKeyMap,
+                                                IndexSearcherContext context)
     {
         this.scoredRowIdIterator = scoredRowIdIterator;
         this.primaryKeyMap = primaryKeyMap;
@@ -45,13 +44,13 @@ public class ScoredRowIdPrimaryKeyMapIterator extends AbstractIterator<ScoredPri
     }
 
     @Override
-    protected ScoredPrimaryKey computeNext()
+    protected PrimaryKeyWithSortKey computeNext()
     {
         if (!scoredRowIdIterator.hasNext())
             return endOfData();
-        var scoredRowId = scoredRowIdIterator.next();
-        var primaryKey = primaryKeyMap.primaryKeyFromRowId(searcherContext.getSegmentRowIdOffset() + scoredRowId.getSegmentRowId());
-        return new ScoredPrimaryKey(primaryKey, scoredRowId.getScore());
+        var rowIdWithMeta = scoredRowIdIterator.next();
+        var primaryKey = primaryKeyMap.primaryKeyFromRowId(searcherContext.getSegmentRowIdOffset() + rowIdWithMeta.getSegmentRowId());
+        return rowIdWithMeta.buildPrimaryKeyWithSortKey(primaryKey);
     }
 
     @Override

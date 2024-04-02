@@ -53,8 +53,6 @@ import org.apache.cassandra.utils.Reducer;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
-import static java.util.function.Function.identity;
-
 public class TrieMemtableIndex implements MemtableIndex
 {
     private final ShardBoundaries boundaries;

@@ -24,7 +24,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.base.MoreObjects;
 import org.slf4j.Logger;
@@ -39,7 +38,6 @@ import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
-import org.apache.cassandra.index.sai.disk.IndexSearcherContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyWithSource;
@@ -52,15 +50,14 @@ import org.apache.cassandra.index.sai.disk.v2.hnsw.CassandraOnDiskHnsw;
 import org.apache.cassandra.index.sai.disk.vector.BruteForceRowIdIterator;
 import org.apache.cassandra.index.sai.disk.vector.CloseableReranker;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
-import org.apache.cassandra.index.sai.disk.vector.ScoredRowId;
 import org.apache.cassandra.index.sai.disk.vector.VectorMemtableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
-import org.apache.cassandra.index.sai.utils.ScoredPrimaryKey;
-import org.apache.cassandra.index.sai.utils.ScoredRowIdPrimaryKeyMapIterator;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
+import org.apache.cassandra.index.sai.utils.RowIdWithScore;
 import org.apache.cassandra.index.sai.utils.SegmentOrdering;
 import org.apache.cassandra.metrics.LinearFit;
 import org.apache.cassandra.metrics.PairedSlidingWindowReservoir;
@@ -147,7 +144,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     }
 
     @Override
-    public CloseableIterator<ScoredPrimaryKey> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context, int limit) throws IOException
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context, int limit) throws IOException
     {
         if (logger.isTraceEnabled())
             logger.trace(indexContext.logMessage("Searching on expression '{}'..."), exp);
@@ -159,7 +156,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         float[] queryVector = exp.lower.value.vector;
 
         var result = searchInternal(keyRange, context, queryVector, limit, topK, 0);
-        return toScoreOrderedIterator(result, context);
+        return toMetaSortedIterator(result, context);
     }
 
     /**
@@ -173,12 +170,12 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
      * @param threshold the threshold for the query. When the threshold is greater than 0 and brute force logic is used,
      *                  the results will be filtered by the threshold.
      */
-    private CloseableIterator<ScoredRowId> searchInternal(AbstractBounds<PartitionPosition> keyRange,
-                                                          QueryContext context,
-                                                          float[] queryVector,
-                                                          int limit,
-                                                          int topK,
-                                                          float threshold) throws IOException
+    private CloseableIterator<RowIdWithScore> searchInternal(AbstractBounds<PartitionPosition> keyRange,
+                                                            QueryContext context,
+                                                            float[] queryVector,
+                                                            int limit,
+                                                            int topK,
+                                                            float threshold) throws IOException
     {
         try (PrimaryKeyMap primaryKeyMap = primaryKeyMapFactory.newPerSSTablePrimaryKeyMap())
         {
@@ -253,24 +250,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         }
     }
 
-    protected CloseableIterator<ScoredPrimaryKey> toScoreOrderedIterator(CloseableIterator<ScoredRowId> scoredRowIdIterator, QueryContext queryContext) throws IOException
-    {
-        if (scoredRowIdIterator == null || !scoredRowIdIterator.hasNext())
-            return CloseableIterator.emptyIterator();
-
-        IndexSearcherContext searcherContext = new IndexSearcherContext(metadata.minKey,
-                                                                        metadata.maxKey,
-                                                                        metadata.minSSTableRowId,
-                                                                        metadata.maxSSTableRowId,
-                                                                        metadata.segmentRowIdOffset,
-                                                                        queryContext,
-                                                                        null);
-        return new ScoredRowIdPrimaryKeyMapIterator(scoredRowIdIterator,
-                                                    primaryKeyMapFactory.newPerSSTablePrimaryKeyMap(),
-                                                    searcherContext);
-    }
-
-    private CloseableIterator<ScoredRowId> orderByBruteForce(float[] queryVector, IntArrayList segmentRowIds, int limit, int topK) throws IOException
+    private CloseableIterator<RowIdWithScore> orderByBruteForce(float[] queryVector, IntArrayList segmentRowIds, int limit, int topK) throws IOException
     {
         // If we use compressed vectors, we still have to order the topK results using full resolution similarity
         // scores, so only use the compressed vectors when there are enough vectors to make it worthwhile.
@@ -286,11 +266,11 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
      * approximate similarity score, and then pass to the {@link BruteForceRowIdIterator} to lazily resolve the
      * full resolution ordering as needed.
      */
-    private CloseableIterator<ScoredRowId> orderByBruteForce(CompressedVectors cv,
-                                                             float[] queryVector,
-                                                             IntArrayList segmentRowIds,
-                                                             int limit,
-                                                             int topK) throws IOException
+    private CloseableIterator<RowIdWithScore> orderByBruteForce(CompressedVectors cv,
+                                                                float[] queryVector,
+                                                                IntArrayList segmentRowIds,
+                                                                int limit,
+                                                                int topK) throws IOException
     {
         var approximateScores = new PriorityQueue<BruteForceRowIdIterator.RowWithApproximateScore>(segmentRowIds.size(),
                                                                                                    (a, b) -> Float.compare(b.getApproximateScore(), a.getApproximateScore()));
@@ -319,9 +299,9 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
      * vectors, read all vectors and put them into a priority queue to rank them lazily. It is assumed that the whole
      * PQ will often not be needed.
      */
-    private CloseableIterator<ScoredRowId> orderByBruteForce(float[] queryVector, IntArrayList segmentRowIds) throws IOException
+    private CloseableIterator<RowIdWithScore> orderByBruteForce(float[] queryVector, IntArrayList segmentRowIds) throws IOException
     {
-        PriorityQueue<ScoredRowId> scoredRowIds = new PriorityQueue<>(segmentRowIds.size(), (a, b) -> Float.compare(b.getScore(), a.getScore()));
+        var scoredRowIds = new PriorityQueue<RowIdWithScore>(segmentRowIds.size());
         addScoredRowIdsToCollector(queryVector, segmentRowIds, 0, scoredRowIds);
         return new PriorityQueueIterator<>(scoredRowIds);
     }
@@ -331,11 +311,11 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
      * out rows that do not meet the threshold, and then return them in an iterator.
      * NOTE: because the threshold is not used for ordering, the result is returned in PK order, not score order.
      */
-    private CloseableIterator<ScoredRowId> filterByBruteForce(float[] queryVector,
-                                                              IntArrayList segmentRowIds,
-                                                              float threshold) throws IOException
+    private CloseableIterator<RowIdWithScore> filterByBruteForce(float[] queryVector,
+                                                                       IntArrayList segmentRowIds,
+                                                                       float threshold) throws IOException
     {
-        var results = new ArrayList<ScoredRowId>(segmentRowIds.size());
+        var results = new ArrayList<RowIdWithScore>(segmentRowIds.size());
         addScoredRowIdsToCollector(queryVector, segmentRowIds, threshold, results);
         return CloseableIterator.wrap(results.iterator());
     }
@@ -343,7 +323,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     private void addScoredRowIdsToCollector(float[] queryVector,
                                             IntArrayList segmentRowIds,
                                             float threshold,
-                                            Collection<ScoredRowId> collector) throws IOException
+                                            Collection<RowIdWithScore> collector) throws IOException
     {
         var similarityFunction = indexContext.getIndexWriterConfig().getSimilarityFunction();
         try (var ordinalsView = graph.getOrdinalsView();
@@ -360,7 +340,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
                 assert vector != null : "Vector for ordinal " + ordinal + " is null";
                 var score = similarityFunction.compare(queryVector, vector);
                 if (score >= threshold)
-                    collector.add(new ScoredRowId(segmentRowId, score));
+                    collector.add(new RowIdWithScore(segmentRowId, score));
             }
         }
     }
@@ -442,36 +422,13 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         return bits;
     }
 
-    private int findBoundaryIndex(List<PrimaryKey> keys, boolean findMin)
-    {
-        // The minKey and maxKey are sometimes just partition keys (not primary keys), so binarySearch
-        // may not return the index of the least/greatest match.
-        var key = findMin ? metadata.minKey : metadata.maxKey;
-        int index = Collections.binarySearch(keys, key);
-        if (index < 0)
-            return -index - 1;
-        if (findMin)
-        {
-            while (index > 0 && keys.get(index - 1).equals(key))
-                index--;
-        }
-        else
-        {
-            while (index < keys.size() - 1 && keys.get(index + 1).equals(key))
-                index++;
-            // We must include the PrimaryKey at the boundary
-            index++;
-        }
-        return index;
-    }
-
     @Override
-    public CloseableIterator<ScoredPrimaryKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context,
+                                                                             List<PrimaryKey> keys,
+                                                                             Expression exp,
+                                                                             int limit) throws IOException
     {
-        // create a sublist of the keys within this segment's bounds
-        int minIndex = findBoundaryIndex(keys, true);
-        int maxIndex = findBoundaryIndex(keys, false);
-        List<PrimaryKey> keysInRange = keys.subList(minIndex, maxIndex);
+        List<PrimaryKey> keysInRange = getKeysInRange(keys);
         if (keysInRange.isEmpty())
             return CloseableIterator.emptyIterator();
 
@@ -491,12 +448,12 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         {
             // brute force using the in-memory compressed vectors to cut down the number of results returned
             var queryVector = exp.lower.value.vector;
-            return toScoreOrderedIterator(this.orderByBruteForce(queryVector, rowIds, limit, topK), context);
+            return toMetaSortedIterator(this.orderByBruteForce(queryVector, rowIds, limit, topK), context);
         }
         // else ask the index to perform a search limited to the bits we created
         float[] queryVector = exp.lower.value.vector;
         var results = graph.search(queryVector, topK, 0, bits, context, cost::updateStatistics);
-        return toScoreOrderedIterator(results, context);
+        return toMetaSortedIterator(results, context);
     }
 
     private Pair<SparseFixedBitSet, IntArrayList> flatmapPrimaryKeysToBitsAndRows(List<PrimaryKey> keysInRange) throws IOException

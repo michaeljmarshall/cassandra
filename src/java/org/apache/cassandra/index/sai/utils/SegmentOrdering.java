@@ -25,10 +25,11 @@ import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.v1.IndexSearcher;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.utils.CloseableIterator;
 
 /**
- * A {@link SegmentOrdering} orders an index and produces a stream of {@link ScoredPrimaryKey}s.
+ * A {@link SegmentOrdering} orders an index and produces a stream of {@link PrimaryKeyWithSortKey}s.
  *
  * The limit can be used to lazily order the {@link PrimaryKey}s. Due to the possiblity for
  * shadowed or updated keys, a {@link SegmentOrdering} should be able to order the whole index
@@ -54,7 +55,7 @@ public interface SegmentOrdering
      * Order a list of primary keys to the top results. The limit is a hint indicating the minimum number of
      * results the query requested.
      */
-    default CloseableIterator<ScoredPrimaryKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
+    default CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
     {
         throw new UnsupportedOperationException();
     }

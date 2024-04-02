@@ -16,26 +16,21 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.index.sai.disk.vector;
+package org.apache.cassandra.index.sai.utils;
 
-public class ScoredRowId
+abstract public class RowIdWithMeta
 {
-    final int segmentRowId;
-    final float score;
+    private final int segmentRowId;
 
-    public ScoredRowId(int segmentRowId, float score)
+    public RowIdWithMeta(int segmentRowId)
     {
         this.segmentRowId = segmentRowId;
-        this.score = score;
     }
 
-    public float getScore()
-    {
-        return score;
-    }
-
-    public int getSegmentRowId()
+    public final int getSegmentRowId()
     {
         return segmentRowId;
     }
+
+    abstract public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(PrimaryKey primaryKey);
 }

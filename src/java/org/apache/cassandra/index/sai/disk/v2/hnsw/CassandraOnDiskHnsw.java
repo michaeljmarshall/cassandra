@@ -39,11 +39,11 @@ import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
-import org.apache.cassandra.index.sai.disk.vector.NodeScoreToScoredRowIdIterator;
+import org.apache.cassandra.index.sai.disk.vector.NodeScoreToRowIdWithScoreIterator;
 import org.apache.cassandra.index.sai.disk.vector.OnDiskOrdinalsMap;
 import org.apache.cassandra.index.sai.disk.vector.OrdinalsView;
-import org.apache.cassandra.index.sai.disk.vector.ScoredRowId;
 import org.apache.cassandra.index.sai.disk.vector.VectorSupplier;
+import org.apache.cassandra.index.sai.utils.RowIdWithScore;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
@@ -105,7 +105,7 @@ public class CassandraOnDiskHnsw extends JVectorLuceneOnDiskGraph
      * @return Row IDs associated with the topK vectors near the query
      */
     @Override
-    public CloseableIterator<ScoredRowId> search(float[] queryVector, int topK, float threshold, Bits acceptBits, QueryContext context, IntConsumer nodesVisited)
+    public CloseableIterator<RowIdWithScore> search(float[] queryVector, int topK, float threshold, Bits acceptBits, QueryContext context, IntConsumer nodesVisited)
     {
         if (threshold > 0)
             throw new InvalidRequestException("Geo queries are not supported for legacy SAI indexes -- drop the index and recreate it to enable these");
@@ -127,7 +127,7 @@ public class CassandraOnDiskHnsw extends JVectorLuceneOnDiskGraph
             nodesVisited.accept(queue.visitedCount());
             Tracing.trace("HNSW search visited {} nodes to return {} results", queue.visitedCount(), queue.size());
             var scores = new ReorderingNodeScoresIterator(queue);
-            return new NodeScoreToScoredRowIdIterator(scores, ordinalsMap.getRowIdsView());
+            return new NodeScoreToRowIdWithScoreIterator(scores, ordinalsMap.getRowIdsView());
         }
         catch (IOException e)
         {

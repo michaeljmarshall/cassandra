@@ -19,6 +19,7 @@
 package org.apache.cassandra.index.sai.utils;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 
@@ -31,21 +32,22 @@ import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
 /**
- * An iterator over {@link ScoredPrimaryKey} that merges multiple iterators into a single iterator by taking the
- * scores of the top element of each iterator and returning the {@link ScoredPrimaryKey} with the
+ * An iterator over {@link PrimaryKeyWithSortKey} that merges multiple iterators into a single iterator by taking the
+ * scores of the top element of each iterator and returning the {@link PrimaryKeyWithSortKey} with the
  * highest score.
  */
-public class MergeScoredPrimaryKeyIterator extends AbstractIterator<ScoredPrimaryKey>
+public class MergePrimaryWithSortKeyIterator extends AbstractIterator<PrimaryKeyWithSortKey>
 {
-    private final PriorityQueue<PeekingIterator<ScoredPrimaryKey>> pq;
-    private final List<CloseableIterator<ScoredPrimaryKey>> iteratorsToBeClosed;
+    private final PriorityQueue<PeekingIterator<? extends PrimaryKeyWithSortKey>> pq;
+    private final List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iteratorsToBeClosed;
     private final Collection<SSTableIndex> indexesToBeClosed;
 
-    public MergeScoredPrimaryKeyIterator(List<CloseableIterator<ScoredPrimaryKey>> iterators, Collection<SSTableIndex> referencedIndexes)
+    public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators,
+                                           Collection<SSTableIndex> referencedIndexes)
     {
         int size = !iterators.isEmpty() ? iterators.size() : 1;
-        this.pq = new PriorityQueue<>(size, (o1, o2) -> Float.compare(o2.peek().score, o1.peek().score));
-        for (CloseableIterator<ScoredPrimaryKey> iterator : iterators)
+        this.pq = new PriorityQueue<>(size, Comparator.comparing(PeekingIterator::peek));
+        for (CloseableIterator<? extends PrimaryKeyWithSortKey> iterator : iterators)
             if (iterator.hasNext())
                 pq.add(Iterators.peekingIterator(iterator));
         iteratorsToBeClosed = iterators;
@@ -53,7 +55,7 @@ public class MergeScoredPrimaryKeyIterator extends AbstractIterator<ScoredPrimar
     }
 
     @Override
-    protected ScoredPrimaryKey computeNext()
+    protected PrimaryKeyWithSortKey computeNext()
     {
         if (pq.isEmpty())
             return endOfData();
@@ -72,7 +74,7 @@ public class MergeScoredPrimaryKeyIterator extends AbstractIterator<ScoredPrimar
     @Override
     public void close()
     {
-        for (CloseableIterator<ScoredPrimaryKey> iterator : iteratorsToBeClosed)
+        for (CloseableIterator<? extends PrimaryKeyWithSortKey> iterator : iteratorsToBeClosed)
             FileUtils.closeQuietly(iterator);
         for (SSTableIndex index : indexesToBeClosed)
             index.release();

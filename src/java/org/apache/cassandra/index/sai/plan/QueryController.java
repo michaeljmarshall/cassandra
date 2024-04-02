@@ -71,8 +71,8 @@ import org.apache.cassandra.index.sai.utils.OrderingFilterRangeIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeIntersectionIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
-import org.apache.cassandra.index.sai.utils.MergeScoredPrimaryKeyIterator;
-import org.apache.cassandra.index.sai.utils.ScoredPrimaryKey;
+import org.apache.cassandra.index.sai.utils.MergePrimaryWithSortKeyIterator;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.TermIterator;
 import org.apache.cassandra.index.sai.view.View;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -424,7 +424,7 @@ public class QueryController implements Plan.Executor
 
     // This is an ANN only query
     @Override
-    public CloseableIterator<ScoredPrimaryKey> getTopKRows(RowFilter.Expression expression)
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RowFilter.Expression expression)
     {
         assert expression.operator() == Operator.ANN;
         var planExpression = new Expression(getContext(expression))
@@ -439,7 +439,7 @@ public class QueryController implements Plan.Executor
         {
             var sstableResults = orderSstables(queryView, Collections.emptyList());
             sstableResults.addAll(memtableResults);
-            return new MergeScoredPrimaryKeyIterator(sstableResults, queryView.referencedIndexes);
+            return new MergePrimaryWithSortKeyIterator(sstableResults, queryView.referencedIndexes);
         }
         catch (Throwable t)
         {
@@ -451,9 +451,9 @@ public class QueryController implements Plan.Executor
     }
 
     // This is a hybrid query. We apply all other predicates before ordering and limiting.
-    public CloseableIterator<ScoredPrimaryKey> getTopKRows(RangeIterator source, RowFilter.Expression expression)
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RangeIterator source, RowFilter.Expression expression)
     {
-        List<CloseableIterator<ScoredPrimaryKey>> scoredPrimaryKeyIterators = new ArrayList<>();
+        List<CloseableIterator<? extends PrimaryKeyWithSortKey>> scoredPrimaryKeyIterators = new ArrayList<>();
         List<SSTableIndex> indexesToRelease = new ArrayList<>();
         try (var iter = new OrderingFilterRangeIterator<>(source, ORDER_CHUNK_SIZE, queryContext, list -> this.getTopKRows(list, expression)))
         {
@@ -464,7 +464,7 @@ public class QueryController implements Plan.Executor
                 indexesToRelease.addAll(next.referencedIndexes);
             }
         }
-        return new MergeScoredPrimaryKeyIterator(scoredPrimaryKeyIterators, indexesToRelease);
+        return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators, indexesToRelease);
     }
 
     private IteratorsAndIndexes getTopKRows(List<PrimaryKey> sourceKeys, RowFilter.Expression expression)
@@ -507,14 +507,14 @@ public class QueryController implements Plan.Executor
     }
 
     /**
-     * Create the list of iterators over {@link ScoredPrimaryKey} from the given {@link QueryViewBuilder.QueryView}.
+     * Create the list of iterators over {@link PrimaryKeyWithSortKey} from the given {@link QueryViewBuilder.QueryView}.
      * @param queryView The view to use to create the iterators.
      * @param sourceKeys The source keys to use to create the iterators. Use an empty list to search all keys.
-     * @return The list of iterators over {@link ScoredPrimaryKey}.
+     * @return The list of iterators over {@link PrimaryKeyWithSortKey}.
      */
-    private List<CloseableIterator<ScoredPrimaryKey>> orderSstables(QueryViewBuilder.QueryView queryView, List<PrimaryKey> sourceKeys)
+    private List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderSstables(QueryViewBuilder.QueryView queryView, List<PrimaryKey> sourceKeys)
     {
-        List<CloseableIterator<ScoredPrimaryKey>> results = new ArrayList<>();
+        List<CloseableIterator<? extends PrimaryKeyWithSortKey>> results = new ArrayList<>();
         for (var e : queryView.view.values())
         {
             QueryViewBuilder.IndexExpression annIndexExpression = null;
@@ -803,10 +803,10 @@ public class QueryController implements Plan.Executor
 
     private static class IteratorsAndIndexes
     {
-        final List<CloseableIterator<ScoredPrimaryKey>> iterators;
+        final List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators;
         final Set<SSTableIndex> referencedIndexes;
 
-        IteratorsAndIndexes(List<CloseableIterator<ScoredPrimaryKey>> iterators, Set<SSTableIndex> indexes)
+        IteratorsAndIndexes(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators, Set<SSTableIndex> indexes)
         {
             this.iterators = iterators;
             this.referencedIndexes = indexes;

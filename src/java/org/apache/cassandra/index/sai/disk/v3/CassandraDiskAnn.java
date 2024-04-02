@@ -43,14 +43,14 @@ import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.vector.AutoResumingNodeScoreIterator;
-import org.apache.cassandra.index.sai.disk.vector.NodeScoreToScoredRowIdIterator;
+import org.apache.cassandra.index.sai.disk.vector.NodeScoreToRowIdWithScoreIterator;
 import org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
 import org.apache.cassandra.index.sai.disk.vector.OnDiskOrdinalsMap;
 import org.apache.cassandra.index.sai.disk.vector.OrdinalsView;
-import org.apache.cassandra.index.sai.disk.vector.ScoredRowId;
 import org.apache.cassandra.index.sai.disk.vector.VectorCompression;
 import org.apache.cassandra.index.sai.disk.vector.VectorSupplier;
+import org.apache.cassandra.index.sai.utils.RowIdWithScore;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
@@ -136,12 +136,12 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
      * a similarity score >= threshold will be returned.
      */
     @Override
-    public CloseableIterator<ScoredRowId> search(float[] queryVector,
-                                                 int topK,
-                                                 float threshold,
-                                                 Bits acceptBits,
-                                                 QueryContext context,
-                                                 IntConsumer nodesVisitedConsumer)
+    public CloseableIterator<RowIdWithScore> search(float[] queryVector,
+                                                    int topK,
+                                                    float threshold,
+                                                    Bits acceptBits,
+                                                    QueryContext context,
+                                                    IntConsumer nodesVisitedConsumer)
     {
         CassandraOnHeapGraph.validateIndexable(queryVector, similarityFunction);
 
@@ -177,12 +177,12 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
                 FileUtils.closeQuietly(view);
                 nodesVisitedConsumer.accept(result.getVisitedCount());
                 var nodeScores = CloseableIterator.wrap(Arrays.stream(result.getNodes()).iterator());
-                return new NodeScoreToScoredRowIdIterator(nodeScores, ordinalsMap.getRowIdsView());
+                return new NodeScoreToRowIdWithScoreIterator(nodeScores, ordinalsMap.getRowIdsView());
             }
             else
             {
                 var nodeScores = new AutoResumingNodeScoreIterator(searcher, result, nodesVisitedConsumer, topK, false, view);
-                return new NodeScoreToScoredRowIdIterator(nodeScores, ordinalsMap.getRowIdsView());
+                return new NodeScoreToRowIdWithScoreIterator(nodeScores, ordinalsMap.getRowIdsView());
             }
         }
         catch (RuntimeException e)

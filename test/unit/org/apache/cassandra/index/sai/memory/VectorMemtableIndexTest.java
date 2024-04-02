@@ -55,7 +55,7 @@ import org.apache.cassandra.index.sai.disk.vector.VectorMemtableIndex;
 import org.apache.cassandra.index.sai.disk.vector.VectorSourceModel;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
-import org.apache.cassandra.index.sai.utils.ScoredPrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithScore;
 import org.apache.cassandra.inject.Injections;
 import org.apache.cassandra.inject.InvokePointBuilder;
 import org.apache.cassandra.locator.TokenMetadata;
@@ -144,20 +144,20 @@ public class VectorMemtableIndexTest extends SAITester
 
             try (var iterator = memtableIndex.orderBy(new QueryContext(), expression, keyRange, limit))
             {
-                ScoredPrimaryKey lastKey = null;
+                PrimaryKeyWithScore lastKey = null;
                 while (iterator.hasNext() && expectedNumResults > foundKeys.size())
                 {
-                    ScoredPrimaryKey primaryKey = iterator.next();
+                    PrimaryKeyWithScore primaryKeyWithScore = (PrimaryKeyWithScore) iterator.next();
                     if (lastKey != null)
                         // This assertion only holds true as long as we query at most the expectedNumResults.
                         // Once we query deeper, we might get a key with a lower score than the last key.
                         // This is a direct consequence of the approximate part of ANN.
-                        assertTrue("Returned keys are not ordered by score", lastKey.score >= primaryKey.score);
-                    lastKey = primaryKey;
-                    int key = Int32Type.instance.compose(primaryKey.partitionKey().getKey());
+                        assertTrue("Returned keys are not ordered by score", primaryKeyWithScore.compareTo(lastKey) >= 0);
+                    lastKey = primaryKeyWithScore;
+                    int key = Int32Type.instance.compose(primaryKeyWithScore.partitionKey().getKey());
                     assertFalse(foundKeys.contains(key));
 
-                    assertTrue(keyRange.contains(primaryKey.partitionKey()));
+                    assertTrue(keyRange.contains(primaryKeyWithScore.partitionKey()));
                     assertTrue(rowMap.containsKey(key));
                     foundKeys.add(key);
                 }

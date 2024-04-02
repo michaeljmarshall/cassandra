@@ -20,9 +20,7 @@ package org.apache.cassandra.index.sai.plan;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.PriorityQueue;
@@ -35,7 +33,6 @@ import java.util.concurrent.CompletionException;
 import javax.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
 import org.apache.commons.lang3.tuple.Triple;
 
 import org.slf4j.Logger;
@@ -66,8 +63,7 @@ import org.apache.cassandra.index.sai.utils.AbortedOperationException;
 import org.apache.cassandra.index.sai.utils.InMemoryPartitionIterator;
 import org.apache.cassandra.index.sai.utils.InMemoryUnfilteredPartitionIterator;
 import org.apache.cassandra.index.sai.utils.PartitionInfo;
-import org.apache.cassandra.index.sai.utils.PrimaryKey;
-import org.apache.cassandra.index.sai.utils.ScoredPrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.FBUtilities;
@@ -214,7 +210,7 @@ public class VectorTopKProcessor
                 try (var partitionRowIterator = retriever.next())
                 {
                     var iter = (StorageAttachedIndexSearcher.ScoreOrderedResultRetriever.PrimaryKeyIterator) partitionRowIterator;
-                    PartitionResults pr = processPartition(iter, iter.scoredPrimaryKey, retriever);
+                    PartitionResults pr = processPartition(iter, iter.primaryKeyWithSortKey, retriever);
                     rowsMatched += pr.rows.size();
                     for (var row : pr.rows)
                         addUnfiltered(unfilteredByPartition, row.getLeft(), row.getMiddle());
@@ -302,7 +298,7 @@ public class VectorTopKProcessor
     /**
      * Processes a single partition, calculating scores for rows and extracting tombstones.
      */
-    private PartitionResults processPartition(BaseRowIterator<?> partitionRowIterator, ScoredPrimaryKey key,
+    private PartitionResults processPartition(BaseRowIterator<?> partitionRowIterator, PrimaryKeyWithSortKey key,
                                               StorageAttachedIndexSearcher.ScoreOrderedResultRetriever retriever) {
         Row staticRow = partitionRowIterator.staticRow();
         PartitionInfo partitionInfo = PartitionInfo.create(partitionRowIterator);

@@ -19,6 +19,8 @@ package org.apache.cassandra.index.sai.disk.v1;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
@@ -30,8 +32,11 @@ import org.apache.cassandra.index.sai.disk.PostingListRangeIterator;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.plan.Expression;
-import org.apache.cassandra.index.sai.utils.ScoredPrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
+import org.apache.cassandra.index.sai.utils.RowIdWithMeta;
+import org.apache.cassandra.index.sai.utils.RowIdToPrimaryKeyWithSortKeyIterator;
 import org.apache.cassandra.index.sai.utils.SegmentOrdering;
 import org.apache.cassandra.utils.CloseableIterator;
 
@@ -86,9 +91,9 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
      * @param keyRange     key range specific in read command, used by ANN index
      * @param queryContext to track per sstable cache and per query metrics
      * @param limit        the num of rows to returned, used by ANN index
-     * @return an iterator of {@link ScoredPrimaryKey} in score order
+     * @return an iterator of {@link PrimaryKeyWithSortKey} in score order
      */
-    public CloseableIterator<ScoredPrimaryKey> orderBy(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
     {
         throw new UnsupportedOperationException();
     }
@@ -106,5 +111,53 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
                                                                         queryContext,
                                                                         postingList.peekable());
         return new PostingListRangeIterator(indexContext, primaryKeyMapFactory.newPerSSTablePrimaryKeyMap(), searcherContext);
+    }
+
+    protected CloseableIterator<? extends PrimaryKeyWithSortKey> toMetaSortedIterator(CloseableIterator<? extends RowIdWithMeta> rowIdIterator, QueryContext queryContext) throws IOException
+    {
+        if (rowIdIterator == null || !rowIdIterator.hasNext())
+            return CloseableIterator.emptyIterator();
+
+        IndexSearcherContext searcherContext = new IndexSearcherContext(metadata.minKey,
+                                                                        metadata.maxKey,
+                                                                        metadata.minSSTableRowId,
+                                                                        metadata.maxSSTableRowId,
+                                                                        metadata.segmentRowIdOffset,
+                                                                        queryContext,
+                                                                        null);
+        return new RowIdToPrimaryKeyWithSortKeyIterator(rowIdIterator,
+                                                        primaryKeyMapFactory.newPerSSTablePrimaryKeyMap(),
+                                                        searcherContext);
+    }
+
+    /** Create a sublist of the keys within (inclusive) this segment's bounds */
+    protected List<PrimaryKey> getKeysInRange(List<PrimaryKey> keys)
+    {
+        int minIndex = findBoundaryIndex(keys, true);
+        int maxIndex = findBoundaryIndex(keys, false);
+        return keys.subList(minIndex, maxIndex);
+    }
+
+    private int findBoundaryIndex(List<PrimaryKey> keys, boolean findMin)
+    {
+        // The minKey and maxKey are sometimes just partition keys (not primary keys), so binarySearch
+        // may not return the index of the least/greatest match.
+        var key = findMin ? metadata.minKey : metadata.maxKey;
+        int index = Collections.binarySearch(keys, key);
+        if (index < 0)
+            return -index - 1;
+        if (findMin)
+        {
+            while (index > 0 && keys.get(index - 1).equals(key))
+                index--;
+        }
+        else
+        {
+            while (index < keys.size() - 1 && keys.get(index + 1).equals(key))
+                index++;
+            // We must include the PrimaryKey at the boundary
+            index++;
+        }
+        return index;
     }
 }
