@@ -18,6 +18,9 @@
 
 package org.apache.cassandra.index.sai.utils;
 
+import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+
 abstract public class RowIdWithMeta
 {
     // TODO isn't a segment row id int? Why is it long everywhere?
@@ -33,5 +36,11 @@ abstract public class RowIdWithMeta
         return segmentRowId;
     }
 
-    abstract public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(PrimaryKey primaryKey);
+    public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(IndexContext indexContext, PrimaryKeyMap primaryKeyMap, long segmentRowIdOffset)
+    {
+        var pk = primaryKeyMap.primaryKeyFromRowId(segmentRowIdOffset + segmentRowId);
+        return wrapPrimaryKey(indexContext, pk);
+    }
+
+    abstract protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, PrimaryKey primaryKey);
 }

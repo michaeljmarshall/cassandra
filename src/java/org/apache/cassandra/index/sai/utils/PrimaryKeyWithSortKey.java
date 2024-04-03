@@ -18,9 +18,14 @@
 
 package org.apache.cassandra.index.sai.utils;
 
+import java.nio.ByteBuffer;
+
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.rows.Cell;
+import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
@@ -33,10 +38,12 @@ import org.apache.cassandra.utils.bytecomparable.ByteSource;
 //public abstract class PrimaryKeyWithSortKey implements Comparable<PrimaryKeyWithSortKey>
 public abstract class PrimaryKeyWithSortKey implements PrimaryKey
 {
-    protected final PrimaryKey primaryKey;
+    protected final IndexContext context;
+    private final PrimaryKey primaryKey;
 
-    public PrimaryKeyWithSortKey(PrimaryKey primaryKey)
+    public PrimaryKeyWithSortKey(IndexContext context, PrimaryKey primaryKey)
     {
+        this.context = context;
         this.primaryKey = primaryKey;
     }
 
@@ -44,6 +51,14 @@ public abstract class PrimaryKeyWithSortKey implements PrimaryKey
     {
         return primaryKey;
     }
+
+    public boolean isIndexDataValid(Row row, int nowInSecs)
+    {
+        var value = context.getValueOf(primaryKey.partitionKey(), row, nowInSecs);
+        return isIndexDataValid(value);
+    }
+
+    abstract protected boolean isIndexDataValid(ByteBuffer value);
 
     @Override
     public final int hashCode()
@@ -79,7 +94,7 @@ public abstract class PrimaryKeyWithSortKey implements PrimaryKey
     }
 
     @Override
-    public Clustering clustering()
+    public Clustering<?> clustering()
     {
         return primaryKey.clustering();
     }

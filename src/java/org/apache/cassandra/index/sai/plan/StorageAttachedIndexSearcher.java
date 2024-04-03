@@ -58,7 +58,6 @@ import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
 import org.apache.cassandra.index.sai.disk.format.IndexFeatureSet;
 import org.apache.cassandra.index.sai.metrics.TableQueryMetrics;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
-import org.apache.cassandra.index.sai.utils.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
@@ -66,6 +65,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
+import org.apache.cassandra.utils.FBUtilities;
 
 public class StorageAttachedIndexSearcher implements Index.Searcher
 {
@@ -128,7 +128,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             var scoredKeysIterator = (CloseableIterator<PrimaryKeyWithSortKey>) keysIterator;
             var result = new ScoreOrderedResultRetriever(scoredKeysIterator, filterTree, controller,
                                                          executionController, queryContext);
-            return (UnfilteredPartitionIterator) new VectorTopKProcessor(command).filter(result);
+            return (UnfilteredPartitionIterator) new TopKProcessor(command).filter(result);
         }
         else
         {
@@ -578,14 +578,11 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         /**
          * Returns true if the key should be included in the global top k. Otherwise, skip the key for now.
          */
-        public boolean shouldInclude(PrimaryKeyWithSortKey key, float rowScore)
+        public boolean shouldInclude(PrimaryKeyWithSortKey key, Row row)
         {
-            // TODO remove assertion and make this generic
-            assert key instanceof PrimaryKeyWithScore : "Expected PrimaryKeyWithScore but got " + key.getClass().getSimpleName();
-            // Accept the Primary Key if its score, which comes from its source vector index, is greater than the score
-            // of the row read from storage. If the score is less than the score of the row read from storage,
-            // then it might not be in the global top k.
-            if (((PrimaryKeyWithScore) key).score > rowScore + 0.0001f)
+            // Accept the Primary Key only if the index's view of the column and the real view column are
+            // consistent.
+            if (!key.isIndexDataValid(row, FBUtilities.nowInSeconds()))
             {
                 updatedKeys.add(key);
                 return false;

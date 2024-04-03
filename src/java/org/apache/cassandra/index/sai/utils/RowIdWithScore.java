@@ -18,13 +18,18 @@
 
 package org.apache.cassandra.index.sai.utils;
 
+import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+
 public class RowIdWithScore extends RowIdWithMeta
 {
+    private final float[] queryVector;
     private final float score;
 
-    public RowIdWithScore(int segmentRowId, float score)
+    public RowIdWithScore(int segmentRowId, float[] queryVector, float score)
     {
         super(segmentRowId);
+        this.queryVector = queryVector;
         this.score = score;
     }
 
@@ -35,8 +40,8 @@ public class RowIdWithScore extends RowIdWithMeta
     }
 
     @Override
-    public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(PrimaryKey primaryKey)
+    protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, PrimaryKey primaryKey)
     {
-        return new PrimaryKeyWithScore(primaryKey, score);
+        return new PrimaryKeyWithScore(indexContext, primaryKey, queryVector, score);
     }
 }

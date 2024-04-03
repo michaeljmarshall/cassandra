@@ -177,12 +177,12 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
                 FileUtils.closeQuietly(view);
                 nodesVisitedConsumer.accept(result.getVisitedCount());
                 var nodeScores = CloseableIterator.wrap(Arrays.stream(result.getNodes()).iterator());
-                return new NodeScoreToRowIdWithScoreIterator(nodeScores, ordinalsMap.getRowIdsView());
+                return new NodeScoreToRowIdWithScoreIterator(nodeScores, ordinalsMap.getRowIdsView(), queryVector);
             }
             else
             {
                 var nodeScores = new AutoResumingNodeScoreIterator(searcher, result, nodesVisitedConsumer, topK, false, view);
-                return new NodeScoreToRowIdWithScoreIterator(nodeScores, ordinalsMap.getRowIdsView());
+                return new NodeScoreToRowIdWithScoreIterator(nodeScores, ordinalsMap.getRowIdsView(), queryVector);
             }
         }
         catch (RuntimeException e)

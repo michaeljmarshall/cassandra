@@ -46,6 +46,11 @@ public class CloseableReranker implements NodeSimilarity.Reranker, Closeable
         return similarityFunction.compare(queryVector, vectorSupplier.getVectorForOrdinal(i));
     }
 
+    public float[] getQueryVector()
+    {
+        return queryVector;
+    }
+
     @Override
     public void close()
     {

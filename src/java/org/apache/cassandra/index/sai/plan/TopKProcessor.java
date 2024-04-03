@@ -72,8 +72,9 @@ import org.apache.cassandra.utils.Pair;
 import static java.lang.Math.min;
 
 /**
- * Processor that scans all rows from given partitions and selects rows with top-k scores based on vector indexes.
+ * Processor that scans all rows from given partitions and selects rows with top-k scores based on indexes.
  *
+ * TODO update me based on what I really do
  * This processor performs the following steps:
  * - collect rows with score into PriorityQueue that sorts rows based on score. If there are multiple vector indexes,
  *   the final score is the sum of all vector index scores.
@@ -85,9 +86,9 @@ import static java.lang.Math.min;
  * - for the first query, coordinator returns global top page-size rows within entire ring
  * - for the subsequent queries, coordinators returns global top page-size rows withom range from last-returned-row to max token
  */
-public class VectorTopKProcessor
+public class TopKProcessor
 {
-    protected static final Logger logger = LoggerFactory.getLogger(VectorTopKProcessor.class);
+    protected static final Logger logger = LoggerFactory.getLogger(TopKProcessor.class);
     private static final LocalAwareExecutorService PARALLEL_EXECUTOR = getExecutor();
     private final ReadCommand command;
     private final IndexContext indexContext;
@@ -95,7 +96,7 @@ public class VectorTopKProcessor
 
     private final int limit;
 
-    public VectorTopKProcessor(ReadCommand command)
+    public TopKProcessor(ReadCommand command)
     {
         this.command = command;
 
@@ -300,17 +301,14 @@ public class VectorTopKProcessor
      */
     private PartitionResults processPartition(BaseRowIterator<?> partitionRowIterator, PrimaryKeyWithSortKey key,
                                               StorageAttachedIndexSearcher.ScoreOrderedResultRetriever retriever) {
-        Row staticRow = partitionRowIterator.staticRow();
         PartitionInfo partitionInfo = PartitionInfo.create(partitionRowIterator);
-        // VSTODO vector columns shouldn't be static, so can we remove this?
-        float keyAndStaticScore = getScoreForRow(key.partitionKey(), staticRow);
         var pr = new PartitionResults(partitionInfo);
 
         if (!partitionRowIterator.hasNext())
             return pr;
 
         Unfiltered unfiltered = partitionRowIterator.next();
-        assert !partitionRowIterator.hasNext() : "Only one row should be returned from vector search";
+        assert !partitionRowIterator.hasNext() : "Only one row should be returned";
         // Always include tombstones for coordinator. It relies on ReadCommand#withMetricsRecording to throw
         // TombstoneOverwhelmingException to prevent OOM.
         if (unfiltered.isRangeTombstoneMarker())
@@ -320,9 +318,9 @@ public class VectorTopKProcessor
         }
 
         Row row = (Row) unfiltered;
-        float rowScore = keyAndStaticScore + getScoreForRow(null, row);
-        if (retriever.shouldInclude(key, rowScore))
-            pr.addRow(Triple.of(partitionInfo, row, rowScore));
+        if (retriever.shouldInclude(key, row))
+            // TODO figure out better way to organize this data, score doesn't matter to us here.
+            pr.addRow(Triple.of(partitionInfo, row, 0f));
 
         return pr;
     }

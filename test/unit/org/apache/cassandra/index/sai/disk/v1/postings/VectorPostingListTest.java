@@ -49,10 +49,10 @@ public class VectorPostingListTest
     public void ensureIteratorIsConsumedClosedAndReordered() throws Throwable
     {
         var source = new TestIterator(Arrays.stream(new RowIdWithScore[] {
-                new RowIdWithScore(3, 3),
-                new RowIdWithScore(2, 2),
-                new RowIdWithScore(1, 1),
-                new RowIdWithScore(4, 4),
+                new RowIdWithScore(3, null, 3),
+                new RowIdWithScore(2, null, 2),
+                new RowIdWithScore(1, null, 1),
+                new RowIdWithScore(4, null, 4),
         }).iterator());
 
         try (var postingList = new VectorPostingList(source))
@@ -75,9 +75,9 @@ public class VectorPostingListTest
     public void ensureAdvanceWorksCorrectly() throws Throwable
     {
         var source = new TestIterator(Arrays.stream(new RowIdWithScore[] {
-        new RowIdWithScore(3, 3),
-        new RowIdWithScore(1, 1),
-        new RowIdWithScore(2, 2),
+        new RowIdWithScore(3, null, 3),
+        new RowIdWithScore(1, null, 1),
+        new RowIdWithScore(2, null, 2),
         }).iterator());
 
         try (var postingList = new VectorPostingList(source))

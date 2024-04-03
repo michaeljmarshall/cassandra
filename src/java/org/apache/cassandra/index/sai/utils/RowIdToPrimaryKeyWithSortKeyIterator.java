@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.index.sai.utils;
 
+import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.IndexSearcherContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.io.util.FileUtils;
@@ -30,14 +31,17 @@ import org.apache.cassandra.utils.CloseableIterator;
  */
 public class RowIdToPrimaryKeyWithSortKeyIterator extends AbstractIterator<PrimaryKeyWithSortKey>
 {
+    private final IndexContext indexContext;
     private final PrimaryKeyMap primaryKeyMap;
     private final CloseableIterator<? extends RowIdWithMeta> scoredRowIdIterator;
     private final IndexSearcherContext searcherContext;
 
-    public RowIdToPrimaryKeyWithSortKeyIterator(CloseableIterator<? extends RowIdWithMeta> scoredRowIdIterator,
+    public RowIdToPrimaryKeyWithSortKeyIterator(IndexContext indexContext,
+                                                CloseableIterator<? extends RowIdWithMeta> scoredRowIdIterator,
                                                 PrimaryKeyMap primaryKeyMap,
                                                 IndexSearcherContext context)
     {
+        this.indexContext = indexContext;
         this.scoredRowIdIterator = scoredRowIdIterator;
         this.primaryKeyMap = primaryKeyMap;
         this.searcherContext = context;
@@ -49,8 +53,7 @@ public class RowIdToPrimaryKeyWithSortKeyIterator extends AbstractIterator<Prima
         if (!scoredRowIdIterator.hasNext())
             return endOfData();
         var rowIdWithMeta = scoredRowIdIterator.next();
-        var primaryKey = primaryKeyMap.primaryKeyFromRowId(searcherContext.getSegmentRowIdOffset() + rowIdWithMeta.getSegmentRowId());
-        return rowIdWithMeta.buildPrimaryKeyWithSortKey(primaryKey);
+        return rowIdWithMeta.buildPrimaryKeyWithSortKey(indexContext, primaryKeyMap, searcherContext.getSegmentRowIdOffset());
     }
 
     @Override

@@ -127,7 +127,7 @@ public class CassandraOnDiskHnsw extends JVectorLuceneOnDiskGraph
             nodesVisited.accept(queue.visitedCount());
             Tracing.trace("HNSW search visited {} nodes to return {} results", queue.visitedCount(), queue.size());
             var scores = new ReorderingNodeScoresIterator(queue);
-            return new NodeScoreToRowIdWithScoreIterator(scores, ordinalsMap.getRowIdsView());
+            return new NodeScoreToRowIdWithScoreIterator(scores, ordinalsMap.getRowIdsView(), queryVector);
         }
         catch (IOException e)
         {
