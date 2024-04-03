@@ -646,6 +646,14 @@ public class StorageAttachedIndex implements Index
     @Override
     public void postQuerySort(ResultSet cqlRows, Restriction restriction, int columnIndex, QueryOptions options)
     {
+        if (restriction instanceof SingleColumnRestriction.OrderRestriction)
+        {
+            // todo obviously this needs to be cleaner...
+            SingleColumnRestriction.OrderRestriction orderRestriction = (SingleColumnRestriction.OrderRestriction) restriction;
+            cqlRows.rows.sort(Comparator.comparing(list->list.get(columnIndex)));
+            return;
+        }
+
         // For now, only support ANN
         assert restriction instanceof SingleColumnRestriction.AnnRestriction;
 

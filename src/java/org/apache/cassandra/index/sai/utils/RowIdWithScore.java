@@ -21,7 +21,7 @@ package org.apache.cassandra.index.sai.utils;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 
-public class RowIdWithScore extends RowIdWithMeta
+public class RowIdWithScore extends RowIdWithMeta implements Comparable<RowIdWithScore>
 {
     private final float[] queryVector;
     private final float score;
@@ -37,6 +37,13 @@ public class RowIdWithScore extends RowIdWithMeta
     public float getScore()
     {
         return score;
+    }
+
+    @Override
+    public int compareTo(RowIdWithScore o)
+    {
+        // Compare descending always for vector
+        return Float.compare(o.score, score);
     }
 
     @Override

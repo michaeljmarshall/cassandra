@@ -92,6 +92,7 @@ public class TopKProcessor
     private static final LocalAwareExecutorService PARALLEL_EXECUTOR = getExecutor();
     private final ReadCommand command;
     private final IndexContext indexContext;
+    private final RowFilter.Expression expression;
     private final float[] queryVector;
 
     private final int limit;
@@ -100,11 +101,15 @@ public class TopKProcessor
     {
         this.command = command;
 
-        Pair<IndexContext, float[]> annIndexAndExpression = findTopKIndexContext();
+        Pair<IndexContext, RowFilter.Expression> annIndexAndExpression = findTopKIndexContext();
         Preconditions.checkNotNull(annIndexAndExpression);
 
         this.indexContext = annIndexAndExpression.left;
-        this.queryVector = annIndexAndExpression.right;
+        this.expression = annIndexAndExpression.right;
+        if (expression.operator() == Operator.ANN)
+            this.queryVector =  TypeUtil.decomposeVector(indexContext, expression.getIndexValue().duplicate());
+        else
+            this.queryVector = null;
         this.limit = command.limits().count();
     }
 
@@ -150,10 +155,10 @@ public class TopKProcessor
     private <U extends Unfiltered, R extends BaseRowIterator<U>, P extends BasePartitionIterator<R>> BasePartitionIterator<?> filterInternal(P partitions)
     {
         // priority queue ordered by score in descending order
-        PriorityQueue<Triple<PartitionInfo, Row, Float>> topK =
-                new PriorityQueue<>(limit, Comparator.comparing((Triple<PartitionInfo, Row, Float> t) -> t.getRight()).reversed());
+        PriorityQueue<Triple<PartitionInfo, Row, Float>> topK = new PriorityQueue<>(limit, Comparator.comparing((Triple<PartitionInfo, Row, Float> t) -> t.getRight()).reversed());
         // to store top-k results in primary key order
         TreeMap<PartitionInfo, TreeSet<Unfiltered>> unfilteredByPartition = new TreeMap<>(Comparator.comparing(p -> p.key));
+        var sorter = new PriorityQueue<Triple<PartitionInfo, Row, ByteBuffer>>(limit, Comparator.comparing(Triple::getRight));
 
         if (PARALLEL_EXECUTOR != ImmediateExecutor.INSTANCE && partitions instanceof ParallelCommandProcessor) {
             ParallelCommandProcessor pIter = (ParallelCommandProcessor) partitions;
@@ -227,18 +232,30 @@ public class TopKProcessor
                 // have to close to move to the next partition, otherwise hasNext() fails
                 try (var partitionRowIterator = partitions.next())
                 {
-                    PartitionResults pr = processPartition(partitionRowIterator);
-                    topK.addAll(pr.rows);
-                    for (var uf: pr.tombstones)
-                        addUnfiltered(unfilteredByPartition, pr.partitionInfo, uf);
+                    if (queryVector != null)
+                    {
+                        PartitionResults pr = processPartition(partitionRowIterator);
+                        topK.addAll(pr.rows);
+                        for (var uf: pr.tombstones)
+                            addUnfiltered(unfilteredByPartition, pr.partitionInfo, uf);
+                    }
+                    else if (partitionRowIterator.hasNext())
+                    {
+                        var unfiltered = partitionRowIterator.next();
+                        assert partitionRowIterator.hasNext() == false : "Only one row should be returned";
+                        Row row = (Row) unfiltered;
+                        sorter.add(Triple.of(PartitionInfo.create(partitionRowIterator), row, row.getCell(expression.column()).buffer()));
+                    }
+
                 }
             }
         }
 
         // reorder rows in partition/clustering order
-        final int numResults = min(topK.size(), limit);
+        int min = Math.max(topK.size(), sorter.size());
+        final int numResults = min(min, limit);
         for (int i = 0; i < numResults; i++) {
-            var triple = topK.poll();
+            var triple = queryVector != null ? topK.poll() : sorter.poll();
             addUnfiltered(unfilteredByPartition, triple.getLeft(), triple.getMiddle());
         }
 
@@ -357,7 +374,7 @@ public class TopKProcessor
     }
 
 
-    private Pair<IndexContext, float[]> findTopKIndexContext()
+    private Pair<IndexContext, RowFilter.Expression> findTopKIndexContext()
     {
         ColumnFamilyStore cfs = Keyspace.openAndGetStore(command.metadata());
 
@@ -366,9 +383,7 @@ public class TopKProcessor
             StorageAttachedIndex sai = findVectorIndexFor(cfs.indexManager, expression);
             if (sai != null)
             {
-
-                float[] qv = TypeUtil.decomposeVector(sai.getIndexContext(), expression.getIndexValue().duplicate());
-                return Pair.create(sai.getIndexContext(), qv);
+                return Pair.create(sai.getIndexContext(), expression);
             }
         }
 
@@ -378,7 +393,7 @@ public class TopKProcessor
     @Nullable
     private StorageAttachedIndex findVectorIndexFor(SecondaryIndexManager sim, RowFilter.Expression e)
     {
-        if (e.operator() != Operator.ANN)
+        if (e.operator() != Operator.ANN && e.operator() != Operator.SORT_ASC)
             return null;
 
         Optional<Index> index = sim.getBestIndexFor(e);
