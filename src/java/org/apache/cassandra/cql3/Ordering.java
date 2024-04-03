@@ -43,15 +43,9 @@ public class Ordering
 
     public interface Expression
     {
-        default boolean hasNonClusteredOrdering()
-        {
-            return false;
-        }
+        boolean hasNonClusteredOrdering();
 
-        default SingleRestriction toRestriction()
-        {
-            throw new UnsupportedOperationException();
-        }
+        SingleRestriction toRestriction();
 
         ColumnMetadata getColumn();
     }
@@ -68,6 +62,20 @@ public class Ordering
         {
             this.column = column;
         }
+
+        @Override
+        public boolean hasNonClusteredOrdering()
+        {
+            // todo is this sufficient?
+            return !column.isClusteringColumn();
+        }
+
+        @Override
+        public SingleRestriction toRestriction()
+        {
+            return new SingleColumnRestriction.OrderRestriction(column);
+        }
+
 
         @Override
         public ColumnMetadata getColumn()

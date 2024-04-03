@@ -991,6 +991,67 @@ public abstract class SingleColumnRestriction implements SingleRestriction
         }
     }
 
+    // TODO how can we make this a column sorter instead of restricter
+    public static final class OrderRestriction extends SingleColumnRestriction
+    {
+
+        public OrderRestriction(ColumnMetadata columnDef)
+        {
+            super(columnDef);
+        }
+
+        @Override
+        public void addFunctionsTo(List<Function> functions)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        MultiColumnRestriction toMultiColumnRestriction()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void addToRowFilter(RowFilter.Builder filter,
+                                   IndexRegistry indexRegistry,
+                                   QueryOptions options)
+        {
+            filter.add(columnDef, Operator.SORT_ASC, ByteBufferUtil.EMPTY_BYTE_BUFFER);
+        }
+
+        @Override
+        public MultiClusteringBuilder appendTo(MultiClusteringBuilder builder, QueryOptions options)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("SORT(%s)", columnDef.name);
+        }
+
+        @Override
+        public SingleRestriction doMergeWith(SingleRestriction otherRestriction)
+        {
+            throw invalidRequest("%s cannot be restricted by both SORT and %s", columnDef.name, otherRestriction.toString());
+        }
+
+        @Override
+        protected boolean isSupportedBy(Index index)
+        {
+            return index.supportsExpression(columnDef, Operator.SORT_ASC);
+        }
+
+        @Override
+        public boolean isAnn()
+        {
+            // TODO what is the right replacement for this boolean?
+            return true;
+        }
+    }
+
     public static final class AnnRestriction extends SingleColumnRestriction
     {
         private final Term value;
@@ -1003,12 +1064,14 @@ public abstract class SingleColumnRestriction implements SingleRestriction
 
         public ByteBuffer value(QueryOptions options)
         {
+            // todo does this get used?
             return value.bindAndGet(options);
         }
 
         @Override
         public void addFunctionsTo(List<Function> functions)
         {
+            // todo when do we hit this code?
             value.addFunctionsTo(functions);
         }
 

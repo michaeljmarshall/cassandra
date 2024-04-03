@@ -426,6 +426,35 @@ public enum Operator
         {
             throw new UnsupportedOperationException();
         }
+    },
+    // TODO find a way to break this out, but for now, we're doing this to get the poc running
+    SORT_ASC(102)
+    {
+        @Override
+        public String toString()
+        {
+            return "ASC";
+        }
+
+        @Override
+        public boolean isSatisfiedBy(AbstractType<?> type, ByteBuffer leftOperand, ByteBuffer rightOperand)
+        {
+            throw new UnsupportedOperationException();
+        }
+    },
+    SORT_DESC(103)
+    {
+        @Override
+        public String toString()
+        {
+            return "DESC";
+        }
+
+        @Override
+        public boolean isSatisfiedBy(AbstractType<?> type, ByteBuffer leftOperand, ByteBuffer rightOperand)
+        {
+            throw new UnsupportedOperationException();
+        }
     };
 
     /**

@@ -1051,7 +1051,7 @@ public class SelectStatement implements CQLStatement.SingleKeyspaceCqlStatement
 
     private boolean needsToSkipUserLimit()
     {
-        // if post query ordering is required, and it's not ANN
+        // if post query ordering is required, and it's not ordered by an index
         return needsPostQueryOrdering() && !needIndexOrdering();
     }
 

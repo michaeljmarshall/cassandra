@@ -302,7 +302,7 @@ public class QueryController implements Plan.Executor
                                                              .plan(this);
 
         var orderings = filterRoot.expressions().stream()
-                                  .filter(e -> e.operator() == Operator.ANN)
+                                  .filter(e -> e.operator() == Operator.ANN || e.operator() == Operator.SORT_ASC)
                                   .collect(Collectors.toList());
         if (!orderings.isEmpty())
         {
@@ -375,7 +375,7 @@ public class QueryController implements Plan.Executor
         assert !expressions.isEmpty() : "expressions should not be empty for " + op + " in " + command.rowFilter().root();
 
         // VSTODO move ANN out of expressions and into its own abstraction? That will help get generic ORDER BY support
-        Collection<Expression> exp = expressions.stream().filter(e -> e.operation != Expression.Op.ANN).collect(Collectors.toList());
+        Collection<Expression> exp = expressions.stream().filter(e -> e.operation != Expression.Op.ANN && e.operation != Expression.Op.SORT_ASC).collect(Collectors.toList());
         boolean defer = builder.type == Operation.OperationType.OR || RangeIntersectionIterator.shouldDefer(exp.size());
 
         Set<Map.Entry<Expression, NavigableSet<SSTableIndex>>> view = referenceAndGetView(op, exp).entrySet();
@@ -426,9 +426,8 @@ public class QueryController implements Plan.Executor
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RowFilter.Expression expression)
     {
-        assert expression.operator() == Operator.ANN;
         var planExpression = new Expression(getContext(expression))
-                             .add(Operator.ANN, expression.getIndexValue().duplicate());
+                             .add(expression.operator(), expression.getIndexValue().duplicate());
 
         // search memtable before referencing sstable indexes; otherwise we may miss newly flushed memtable index
         var memtableResults = getContext(expression).orderMemtable(queryContext, planExpression, mergeRange, limit);

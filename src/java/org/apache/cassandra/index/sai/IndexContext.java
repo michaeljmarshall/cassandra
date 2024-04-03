@@ -622,6 +622,9 @@ public class IndexContext
         if (op == Operator.ANN || op == Operator.BOUNDED_ANN)
             return false;
 
+        if (op == Operator.SORT_ASC)
+            return TypeUtil.isLiteral(column.type);
+
         Expression.Op operator = Expression.Op.valueOf(op);
 
         if (isNonFrozenCollection())

@@ -18,20 +18,25 @@
 
 package org.apache.cassandra.index.sai.utils;
 
-abstract public class RowIdWithMeta
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
+
+public class PrimaryKeyWithByteComparable extends PrimaryKeyWithSortKey
 {
-    // TODO isn't a segment row id int? Why is it long everywhere?
-    private final long segmentRowId;
+    private final ByteComparable byteComparable;
 
-    public RowIdWithMeta(long segmentRowId)
+    public PrimaryKeyWithByteComparable(PrimaryKey primaryKey, ByteComparable byteComparable)
     {
-        this.segmentRowId = segmentRowId;
+        super(primaryKey);
+        this.byteComparable = byteComparable;
     }
 
-    public final long getSegmentRowId()
+    @Override
+    public int compareTo(PrimaryKey o)
     {
-        return segmentRowId;
-    }
+        if (!(o instanceof PrimaryKeyWithByteComparable))
+            throw new IllegalArgumentException("Cannot compare PrimaryKeyWithByteComparable with " + o.getClass().getSimpleName());
 
-    abstract public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(PrimaryKey primaryKey);
+        // TODO is this the right version?
+        return ByteComparable.compare(byteComparable, ((PrimaryKeyWithByteComparable) o).byteComparable, ByteComparable.Version.OSS41);
+    }
 }

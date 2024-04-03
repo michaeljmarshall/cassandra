@@ -33,6 +33,7 @@ import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.index.sai.utils.LongIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.mockito.Mockito;
 
@@ -430,13 +431,13 @@ public class PlanTest
             }
 
             @Override
-            public Iterator<? extends PrimaryKey> getTopKRows(RowFilter.Expression ordering)
+            public Iterator<? extends PrimaryKeyWithSortKey> getTopKRows(RowFilter.Expression ordering)
             {
                 throw new UnsupportedOperationException();
             }
 
             @Override
-            public Iterator<? extends PrimaryKey> getTopKRows(RangeIterator keys, RowFilter.Expression ordering)
+            public Iterator<? extends PrimaryKeyWithSortKey> getTopKRows(RangeIterator keys, RowFilter.Expression ordering)
             {
                 throw new UnsupportedOperationException();
             }

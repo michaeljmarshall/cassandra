@@ -58,7 +58,7 @@ public class Expression
         EQ, MATCH, PREFIX, NOT_EQ, RANGE,
         CONTAINS_KEY, CONTAINS_VALUE,
         NOT_CONTAINS_VALUE, NOT_CONTAINS_KEY,
-        IN, ANN, BOUNDED_ANN;
+        IN, ANN, BOUNDED_ANN, SORT_ASC;
 
         public static Op valueOf(Operator operator)
         {
@@ -240,6 +240,9 @@ public class Expression
                 operation = Op.ANN;
                 lower = new Bound(value, validator, true);
                 upper = lower;
+                break;
+            case SORT_ASC:
+                operation = Op.SORT_ASC;
                 break;
             case BOUNDED_ANN:
                 operation = Op.BOUNDED_ANN;

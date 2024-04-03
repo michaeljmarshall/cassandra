@@ -68,7 +68,7 @@ public class StorageAttachedIndexQueryPlan implements Index.QueryPlan
         this.postIndexFilter = filter.restrict(RowFilter.Expression::isUserDefined);
         this.indexes = indexes;
         this.indexFeatureSet = indexFeatureSet;
-        this.isTopK = filter.root().expressions().stream().anyMatch(p -> p.operator() == Operator.ANN);
+        this.isTopK = filter.root().expressions().stream().anyMatch(p -> p.operator() == Operator.ANN || p.operator() == Operator.SORT_ASC || p.operator() == Operator.SORT_DESC);
     }
 
     @Nullable

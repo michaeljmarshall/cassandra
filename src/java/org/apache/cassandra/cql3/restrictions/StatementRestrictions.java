@@ -418,6 +418,7 @@ public class StatementRestrictions
 
             // ORDER BY clause.
             // Some indexes can be used for ordering.
+            // need to figure out if we have an ordering that is on for an index
             if (nestingLevel == 0)
                 addOrderingRestrictions(orderings, nonPrimaryKeyRestrictionSet);
 
@@ -566,7 +567,7 @@ public class StatementRestrictions
 
             // Because an ANN queries limit the result set based within the SAI, clustering column restrictions
             // must be added to the filter restrictions.
-            if (nonPrimaryKeyRestrictions.restrictions().stream().anyMatch(SingleRestriction::isAnn))
+            if (orderings.stream().anyMatch(o -> o.expression.hasNonClusteredOrdering()))
                 usesSecondaryIndexing = true;
 
             if (usesSecondaryIndexing || clusteringColumnsRestrictions.needFiltering())
@@ -647,18 +648,19 @@ public class StatementRestrictions
          */
         private void addOrderingRestrictions(List<Ordering> orderings, RestrictionSet.Builder receiver)
         {
-            List<Ordering> annOrderings = orderings.stream().filter(o -> o.expression.hasNonClusteredOrdering()).collect(Collectors.toList());
+            // todo does this accidentally allow for double ordering with and without nonclustered ordering?
+            List<Ordering> indexOrderings = orderings.stream().filter(o -> o.expression.hasNonClusteredOrdering()).collect(Collectors.toList());
 
-            if (annOrderings.size() > 1)
+            if (indexOrderings.size() > 1)
                 throw new InvalidRequestException("Cannot specify more than one ANN ordering");
-            else if (annOrderings.size() == 1)
+            else if (indexOrderings.size() == 1)
             {
                 if (orderings.size() > 1)
-                    throw new InvalidRequestException("ANN ordering does not support secondary ordering");
-                Ordering annOrdering = annOrderings.get(0);
-                if (annOrdering.direction != Ordering.Direction.ASC)
+                    throw new InvalidRequestException("Index based ordering does not support secondary ordering");
+                Ordering ordering = indexOrderings.get(0);
+                if (ordering.direction != Ordering.Direction.ASC && ordering.expression instanceof Ordering.Ann)
                     throw new InvalidRequestException("Descending ANN ordering is not supported");
-                SingleRestriction restriction = annOrdering.expression.toRestriction();
+                SingleRestriction restriction = ordering.expression.toRestriction();
                 receiver.addRestriction(restriction, false);
             }
         }

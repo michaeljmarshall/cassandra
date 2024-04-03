@@ -18,20 +18,27 @@
 
 package org.apache.cassandra.index.sai.utils;
 
-abstract public class RowIdWithMeta
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
+
+public class RowIdWithByteComparable extends RowIdWithMeta
 {
-    // TODO isn't a segment row id int? Why is it long everywhere?
-    private final long segmentRowId;
+    private final ByteComparable byteComparable;
 
-    public RowIdWithMeta(long segmentRowId)
+    public RowIdWithByteComparable(long segmentRowId, ByteComparable byteComparable)
     {
-        this.segmentRowId = segmentRowId;
+        // todo don't cast
+        super((int) segmentRowId);
+        this.byteComparable = byteComparable;
     }
 
-    public final long getSegmentRowId()
+    public ByteComparable getByteComparable()
     {
-        return segmentRowId;
+        return byteComparable;
     }
 
-    abstract public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(PrimaryKey primaryKey);
+    @Override
+    public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(PrimaryKey primaryKey)
+    {
+        return new PrimaryKeyWithByteComparable(primaryKey, byteComparable);
+    }
 }
