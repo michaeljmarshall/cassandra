@@ -239,12 +239,13 @@ public class TopKProcessor
                         for (var uf: pr.tombstones)
                             addUnfiltered(unfilteredByPartition, pr.partitionInfo, uf);
                     }
-                    else if (partitionRowIterator.hasNext())
+                    else
                     {
-                        var unfiltered = partitionRowIterator.next();
-                        assert partitionRowIterator.hasNext() == false : "Only one row should be returned";
-                        Row row = (Row) unfiltered;
-                        sorter.add(Triple.of(PartitionInfo.create(partitionRowIterator), row, row.getCell(expression.column()).buffer()));
+                        while (partitionRowIterator.hasNext())
+                        {
+                            Row row = (Row) partitionRowIterator.next();
+                            sorter.add(Triple.of(PartitionInfo.create(partitionRowIterator), row, row.getCell(expression.column()).buffer()));
+                        }
                     }
 
                 }

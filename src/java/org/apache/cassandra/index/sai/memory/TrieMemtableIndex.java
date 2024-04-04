@@ -42,11 +42,14 @@ import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.utils.MergePrimaryWithSortKeyIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeys;
 import org.apache.cassandra.index.sai.utils.RangeConcatIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
+import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Reducer;
@@ -172,6 +175,25 @@ public class TrieMemtableIndex implements MemtableIndex
         }
 
         return builder.build();
+    }
+
+    @Override
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(QueryContext queryContext, Expression expression, AbstractBounds<PartitionPosition> keyRange, int limit)
+    {
+        int startShard = boundaries.getShardForToken(keyRange.left.getToken());
+        int endShard = keyRange.right.isMinimum() ? boundaries.shardCount() - 1 : boundaries.getShardForToken(keyRange.right.getToken());
+
+        var pq = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(endShard - startShard + 1);
+
+        for (int shard  = startShard; shard <= endShard; ++shard)
+        {
+            assert rangeIndexes[shard] != null;
+            pq.add(rangeIndexes[shard].orderBy(queryContext, expression, keyRange, limit));
+        }
+
+        // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
+        // way to get this working based on the current API.
+        return new MergePrimaryWithSortKeyIterator(pq, List.of());
     }
 
     /**

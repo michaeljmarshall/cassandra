@@ -45,12 +45,17 @@ import org.apache.cassandra.db.tries.MemtableTrie;
 import org.apache.cassandra.db.tries.Trie;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithByteComparable;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeys;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
+import org.apache.cassandra.utils.AbstractIterator;
+import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
@@ -156,6 +161,14 @@ public class TrieMemoryIndex extends MemoryIndex
                 return Pair.create(decode(entry.getKey()), entry.getValue());
             }
         };
+    }
+
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(QueryContext queryContext, Expression expression, AbstractBounds<PartitionPosition> keyRange, int limit)
+    {
+        if (data.isEmpty())
+            return CloseableIterator.emptyIterator();
+        // TODO only ascending right now...
+        return new AllTermsIterator(data.entrySet().iterator());
     }
 
     @Override
@@ -361,6 +374,36 @@ public class TrieMemoryIndex extends MemoryIndex
                     maximumKey = maximumKey == null ? key : key.compareTo(maximumKey) > 0 ? key : maximumKey;
                 }
             }
+        }
+    }
+
+    private class AllTermsIterator extends AbstractIterator<PrimaryKeyWithByteComparable>
+    {
+        private final Iterator<Map.Entry<ByteComparable, PrimaryKeys>> iterator;
+        private Iterator<PrimaryKey> primaryKeysIterator = CloseableIterator.emptyIterator();
+        private ByteComparable byteComparableTerm = null;
+
+        public AllTermsIterator(Iterator<Map.Entry<ByteComparable, PrimaryKeys>> iterator)
+        {
+            this.iterator = iterator;
+        }
+
+        @Override
+        protected PrimaryKeyWithByteComparable computeNext()
+        {
+            if (primaryKeysIterator.hasNext())
+                return new PrimaryKeyWithByteComparable(indexContext, primaryKeysIterator.next(), byteComparableTerm);
+
+            if (iterator.hasNext())
+            {
+                var entry = iterator.next();
+                primaryKeysIterator = entry.getValue().keys().iterator();
+                // We don't decode this because we want the ByteComparable version of the term.
+                // TODO maybe we do want to decode it, I thought we didn't, but tests started passing once we did.
+                byteComparableTerm = decode(entry.getKey());
+                return new PrimaryKeyWithByteComparable(indexContext, primaryKeysIterator.next(), byteComparableTerm);
+            }
+            return endOfData();
         }
     }
 }
