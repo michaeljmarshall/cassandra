@@ -27,9 +27,9 @@ public class PrimaryKeyWithByteComparable extends PrimaryKeyWithSortKey
 {
     private final ByteComparable byteComparable;
 
-    public PrimaryKeyWithByteComparable(IndexContext context, PrimaryKey primaryKey, ByteComparable byteComparable)
+    public PrimaryKeyWithByteComparable(IndexContext context, Object sourceTable, PrimaryKey primaryKey, ByteComparable byteComparable)
     {
-        super(context, primaryKey);
+        super(context, sourceTable, primaryKey);
         this.byteComparable = byteComparable;
     }
 

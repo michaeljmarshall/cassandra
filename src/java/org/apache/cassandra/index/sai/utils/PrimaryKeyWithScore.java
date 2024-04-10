@@ -27,9 +27,9 @@ public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
     private final float[] queryVector;
     private final float indexScore;
 
-    public PrimaryKeyWithScore(IndexContext context, PrimaryKey primaryKey, float[] queryVector, float indexScore)
+    public PrimaryKeyWithScore(IndexContext context, Object source, PrimaryKey primaryKey, float[] queryVector, float indexScore)
     {
-        super(context, primaryKey);
+        super(context, source, primaryKey);
         this.queryVector = queryVector;
         this.indexScore = indexScore;
     }

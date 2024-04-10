@@ -77,8 +77,8 @@ public interface MemtableIndex extends MemtableOrdering
 
     Iterator<Pair<ByteComparable, Iterator<PrimaryKey>>> iterator(DecoratedKey min, DecoratedKey max);
 
-    static MemtableIndex createIndex(IndexContext indexContext)
+    static MemtableIndex createIndex(IndexContext indexContext, Memtable mt)
     {
-        return indexContext.isVector() ? new VectorMemtableIndex(indexContext) : new TrieMemtableIndex(indexContext);
+        return indexContext.isVector() ? new VectorMemtableIndex(indexContext, mt) : new TrieMemtableIndex(indexContext, mt);
     }
 }

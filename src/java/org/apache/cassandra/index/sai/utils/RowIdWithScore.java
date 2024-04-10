@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sai.utils;
 
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+import org.apache.cassandra.io.sstable.SSTableId;
 
 public class RowIdWithScore extends RowIdWithMeta implements Comparable<RowIdWithScore>
 {
@@ -47,8 +48,8 @@ public class RowIdWithScore extends RowIdWithMeta implements Comparable<RowIdWit
     }
 
     @Override
-    protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, PrimaryKey primaryKey)
+    protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, SSTableId<?> sstableId, PrimaryKey primaryKey)
     {
-        return new PrimaryKeyWithScore(indexContext, primaryKey, queryVector, score);
+        return new PrimaryKeyWithScore(indexContext, sstableId, primaryKey, queryVector, score);
     }
 }

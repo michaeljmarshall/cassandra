@@ -22,7 +22,6 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.index.sai.IndexContext;
@@ -40,10 +39,13 @@ public abstract class PrimaryKeyWithSortKey implements PrimaryKey
 {
     protected final IndexContext context;
     private final PrimaryKey primaryKey;
+    // Either a Memtable reference or an SSTableId reference
+    private final Object sourceTable;
 
-    public PrimaryKeyWithSortKey(IndexContext context, PrimaryKey primaryKey)
+    public PrimaryKeyWithSortKey(IndexContext context, Object sourceTable, PrimaryKey primaryKey)
     {
         this.context = context;
+        this.sourceTable = sourceTable;
         this.primaryKey = primaryKey;
     }
 
@@ -54,8 +56,16 @@ public abstract class PrimaryKeyWithSortKey implements PrimaryKey
 
     public boolean isIndexDataValid(Row row, int nowInSecs)
     {
-        var value = context.getValueOf(primaryKey.partitionKey(), row, nowInSecs);
-        return isIndexDataValid(value);
+        // TODO cleanup assertions, these are left over from initial hacking
+        assert context.getDefinition().isRegular() : "Only regular columns are supported, got " + context.getDefinition();
+        var cell = row.getCell(context.getDefinition());
+        assert cell instanceof CellWithSourceTable : "Expected CellWithSource, got " + cell.getClass();
+        assert cell.isLive(nowInSecs) : "Expected live cell, got " + cell;
+        var result1 = sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable());
+        // TODO this check is unnecessary, but I am leaving it for now until I have confirmed the other result1 impl
+        var result2 = isIndexDataValid(cell.buffer());
+        assert result1 == result2 : "Expected " + result1 + ", got " + result2;
+        return result1;
     }
 
     abstract protected boolean isIndexDataValid(ByteBuffer value);

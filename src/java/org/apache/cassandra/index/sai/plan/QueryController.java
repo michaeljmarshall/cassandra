@@ -29,6 +29,7 @@ import java.util.NavigableSet;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -55,7 +56,10 @@ import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.memtable.Memtable;
+import org.apache.cassandra.db.rows.BaseRowIterator;
+import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
+import org.apache.cassandra.db.transform.Transformation;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Bounds;
 import org.apache.cassandra.dht.Range;
@@ -73,6 +77,7 @@ import org.apache.cassandra.index.sai.utils.RangeIntersectionIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.MergePrimaryWithSortKeyIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
+import org.apache.cassandra.index.sai.utils.RowWithSourceTable;
 import org.apache.cassandra.index.sai.utils.TermIterator;
 import org.apache.cassandra.index.sai.view.View;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -231,7 +236,27 @@ public class QueryController implements Plan.Executor
             throw new IllegalArgumentException("non-null key required");
 
         SinglePartitionReadCommand partition = getPartitionReadCommand(key, executionController);
-        return executePartitionReadCommand(partition, executionController);
+        return partition.queryMemtableAndDisk(cfs, executionController);
+    }
+
+    public UnfilteredRowIterator getPartition(PrimaryKey key, ColumnFamilyStore.ViewFragment view, ReadExecutionController executionController)
+    {
+        if (key == null)
+            throw new IllegalArgumentException("non-null key required");
+
+        SinglePartitionReadCommand partition = getPartitionReadCommand(key, executionController);
+
+        // Class to transform the row to include its source table.
+        Function<Object, Transformation<BaseRowIterator<?>>> rowTransformer = (Object sourceTable) -> new Transformation<>()
+        {
+            @Override
+            protected Row applyToRow(Row row)
+            {
+                return new RowWithSourceTable(row, sourceTable);
+            }
+        };
+
+        return partition.queryMemtableAndDisk(cfs, view, rowTransformer, executionController);
     }
 
     public SinglePartitionReadCommand getPartitionReadCommand(PrimaryKey key, ReadExecutionController executionController)
@@ -246,11 +271,6 @@ public class QueryController implements Plan.Executor
                                                  DataLimits.NONE,
                                                  key.partitionKey(),
                                                  makeFilter(key));
-    }
-
-    public UnfilteredRowIterator executePartitionReadCommand(SinglePartitionReadCommand command, ReadExecutionController executionController)
-    {
-        return command.queryMemtableAndDisk(cfs, executionController);
     }
 
     private Plan buildPlan()

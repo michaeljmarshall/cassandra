@@ -42,6 +42,7 @@ import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.filter.RowFilter;
+import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.AbstractUnfilteredRowIterator;
@@ -119,19 +120,29 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
     @SuppressWarnings("unchecked")
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) throws RequestTimeoutException
     {
-        FilterTree filterTree = analyzeFilter();
-        Iterator<? extends PrimaryKey> keysIterator = controller.buildIterator();
-
         if (command.isTopK())
         {
-            assert !(keysIterator instanceof RangeIterator);
-            var scoredKeysIterator = (CloseableIterator<PrimaryKeyWithSortKey>) keysIterator;
-            var result = new ScoreOrderedResultRetriever(scoredKeysIterator, filterTree, controller,
-                                                         executionController, queryContext);
-            return (UnfilteredPartitionIterator) new TopKProcessor(command).filter(result);
+            // TopK queries require a consistent view of the sstables and memtables in order to validate overwritten
+            // rows. Acquire the view before building any of the iterators.
+            // TODO is live correct or should we use canonical?
+            try (var view = cfs.selectAndReference(View.selectLive(controller.mergeRange())))
+            {
+                FilterTree filterTree = analyzeFilter();
+                // todo do should we limit which indexes get in based on the view?
+                // I'm pretty sure we want to, especially for memtables to ensure we don't miss things.
+                Iterator<? extends PrimaryKey> keysIterator = controller.buildIterator();
+                assert !(keysIterator instanceof RangeIterator);
+                queryContext.view = view;
+                var scoredKeysIterator = (CloseableIterator<PrimaryKeyWithSortKey>) keysIterator;
+                var result = new ScoreOrderedResultRetriever(view, scoredKeysIterator, filterTree, controller,
+                                                             executionController, queryContext);
+                return (UnfilteredPartitionIterator) new TopKProcessor(command).filter(result);
+            }
         }
         else
         {
+            FilterTree filterTree = analyzeFilter();
+            Iterator<? extends PrimaryKey> keysIterator = controller.buildIterator();
             assert keysIterator instanceof RangeIterator;
             return new ResultRetriever((RangeIterator) keysIterator, filterTree, controller, executionController, queryContext);
         }
@@ -461,6 +472,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
 
     public static class ScoreOrderedResultRetriever extends AbstractIterator<UnfilteredRowIterator> implements UnfilteredPartitionIterator
     {
+        private final ColumnFamilyStore.RefViewFragment view;
         private final List<AbstractBounds<PartitionPosition>> keyRanges;
         private final boolean coversFullRing;
         private final CloseableIterator<PrimaryKeyWithSortKey> scoredPrimaryKeyIterator;
@@ -472,12 +484,14 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         private HashSet<PrimaryKey> keysSeen;
         private HashSet<PrimaryKey> updatedKeys;
 
-        private ScoreOrderedResultRetriever(CloseableIterator<PrimaryKeyWithSortKey> scoredPrimaryKeyIterator,
+        private ScoreOrderedResultRetriever(ColumnFamilyStore.RefViewFragment view,
+                                            CloseableIterator<PrimaryKeyWithSortKey> scoredPrimaryKeyIterator,
                                             FilterTree filterTree,
                                             QueryController controller,
                                             ReadExecutionController executionController,
                                             QueryContext queryContext)
         {
+            this.view = view;
             this.keyRanges = controller.dataRanges().stream().map(DataRange::keyRange).collect(Collectors.toList());
             this.coversFullRing = keyRanges.size() == 1 && RangeUtil.coversFullRing(keyRanges.get(0));
 
@@ -562,7 +576,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             if (!keysSeen.add(key) && !updatedKeys.contains(key))
                 return null;
 
-            try (UnfilteredRowIterator partition = controller.getPartition(key, executionController))
+            try (UnfilteredRowIterator partition = controller.getPartition(key, view, executionController))
             {
                 queryContext.addPartitionsRead(1);
                 queryContext.checkpoint();

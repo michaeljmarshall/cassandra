@@ -19,6 +19,7 @@
 package org.apache.cassandra.index.sai.utils;
 
 import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 
 public class RowIdWithByteComparable extends RowIdWithMeta
@@ -33,8 +34,8 @@ public class RowIdWithByteComparable extends RowIdWithMeta
     }
 
     @Override
-    protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext context, PrimaryKey primaryKey)
+    protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext context, SSTableId<?> sstableId, PrimaryKey primaryKey)
     {
-        return new PrimaryKeyWithByteComparable(context, primaryKey, byteComparable);
+        return new PrimaryKeyWithByteComparable(context, sstableId, primaryKey, byteComparable);
     }
 }

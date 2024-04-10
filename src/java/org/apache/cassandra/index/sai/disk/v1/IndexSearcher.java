@@ -126,6 +126,7 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
                                                                         queryContext,
                                                                         null);
         return new RowIdToPrimaryKeyWithSortKeyIterator(indexContext,
+                                                        indexDescriptor.descriptor.id,
                                                         rowIdIterator,
                                                         primaryKeyMapFactory.newPerSSTablePrimaryKeyMap(),
                                                         searcherContext);

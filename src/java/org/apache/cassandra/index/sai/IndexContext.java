@@ -246,7 +246,7 @@ public class IndexContext
         // call to computeIfAbsent() if it's not. (see https://bugs.openjdk.java.net/browse/JDK-8161372)
         MemtableIndex target = (current != null)
                                ? current
-                               : liveMemtables.computeIfAbsent(memtable, mt -> MemtableIndex.createIndex(this));
+                               : liveMemtables.computeIfAbsent(memtable, mt -> MemtableIndex.createIndex(this, mt));
 
         long start = System.nanoTime();
 
@@ -485,6 +485,14 @@ public class IndexContext
         return result;
     }
 
+    /**
+     * Order by brute force... todo make more info here
+     */
+//    public void orderByBruteForce()
+//    {
+//        indexType
+//    }
+
     public long liveMemtableWriteCount()
     {
         return liveMemtables.values().stream().mapToLong(MemtableIndex::writeCount).sum();
@@ -622,8 +630,9 @@ public class IndexContext
         if (op == Operator.ANN || op == Operator.BOUNDED_ANN)
             return false;
 
+        // Only regular columns can be sorted by SAI (at least for now)
         if (op == Operator.SORT_ASC)
-            return TypeUtil.isLiteral(column.type);
+            return TypeUtil.isLiteral(column.type) && column.isRegular();
 
         Expression.Op operator = Expression.Op.valueOf(op);
 

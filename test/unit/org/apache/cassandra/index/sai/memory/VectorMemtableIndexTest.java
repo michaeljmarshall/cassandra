@@ -115,7 +115,8 @@ public class VectorMemtableIndexTest extends SAITester
     @Test
     public void randomQueryTest() throws Exception
     {
-        memtableIndex = new VectorMemtableIndex(indexContext);
+        var memtable = cfs.getCurrentMemtable();
+        memtableIndex = new VectorMemtableIndex(indexContext, memtable);
 
         for (int row = 0; row < getRandom().nextIntBetween(1000, 5000); row++)
         {

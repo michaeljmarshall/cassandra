@@ -21,6 +21,7 @@ package org.apache.cassandra.index.sai.utils;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.IndexSearcherContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
@@ -32,16 +33,19 @@ import org.apache.cassandra.utils.CloseableIterator;
 public class RowIdToPrimaryKeyWithSortKeyIterator extends AbstractIterator<PrimaryKeyWithSortKey>
 {
     private final IndexContext indexContext;
+    private final SSTableId<?> sstableId;
     private final PrimaryKeyMap primaryKeyMap;
     private final CloseableIterator<? extends RowIdWithMeta> scoredRowIdIterator;
     private final IndexSearcherContext searcherContext;
 
     public RowIdToPrimaryKeyWithSortKeyIterator(IndexContext indexContext,
+                                                SSTableId<?> sstableId,
                                                 CloseableIterator<? extends RowIdWithMeta> scoredRowIdIterator,
                                                 PrimaryKeyMap primaryKeyMap,
                                                 IndexSearcherContext context)
     {
         this.indexContext = indexContext;
+        this.sstableId = sstableId;
         this.scoredRowIdIterator = scoredRowIdIterator;
         this.primaryKeyMap = primaryKeyMap;
         this.searcherContext = context;
@@ -53,7 +57,7 @@ public class RowIdToPrimaryKeyWithSortKeyIterator extends AbstractIterator<Prima
         if (!scoredRowIdIterator.hasNext())
             return endOfData();
         var rowIdWithMeta = scoredRowIdIterator.next();
-        return rowIdWithMeta.buildPrimaryKeyWithSortKey(indexContext, primaryKeyMap, searcherContext.getSegmentRowIdOffset());
+        return rowIdWithMeta.buildPrimaryKeyWithSortKey(indexContext, sstableId, primaryKeyMap, searcherContext.getSegmentRowIdOffset());
     }
 
     @Override

@@ -25,6 +25,7 @@ import javax.annotation.concurrent.NotThreadSafe;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.index.sai.utils.AbortedOperationException;
 
 /**
@@ -38,6 +39,8 @@ public class QueryContext
     protected final long queryStartTimeNanos;
 
     public final long executionQuotaNano;
+
+    public volatile ColumnFamilyStore.ViewFragment view;
 
     private final LongAdder sstablesHit = new LongAdder();
     private final LongAdder segmentsHit = new LongAdder();

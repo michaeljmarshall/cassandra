@@ -32,6 +32,7 @@ import java.util.SortedSet;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongConsumer;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +41,7 @@ import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.memtable.TrieMemtable;
 import org.apache.cassandra.db.tries.MemtableTrie;
 import org.apache.cassandra.db.tries.Trie;
@@ -71,6 +73,8 @@ public class TrieMemoryIndex extends MemoryIndex
     private final MemtableTrie<PrimaryKeys> data;
     private final PrimaryKeysReducer primaryKeysReducer;
 
+    private final Memtable memtable;
+
     private ByteBuffer minTerm;
     private ByteBuffer maxTerm;
 
@@ -82,11 +86,18 @@ public class TrieMemoryIndex extends MemoryIndex
         }
     };
 
+    @VisibleForTesting
     public TrieMemoryIndex(IndexContext indexContext)
+    {
+        this(indexContext, null);
+    }
+
+    public TrieMemoryIndex(IndexContext indexContext, Memtable memtable)
     {
         super(indexContext);
         this.data = new MemtableTrie<>(TrieMemtable.BUFFER_TYPE);
         this.primaryKeysReducer = new PrimaryKeysReducer();
+        this.memtable = memtable;
     }
 
     public synchronized void add(DecoratedKey key,
@@ -391,8 +402,9 @@ public class TrieMemoryIndex extends MemoryIndex
         @Override
         protected PrimaryKeyWithByteComparable computeNext()
         {
+            assert memtable != null;
             if (primaryKeysIterator.hasNext())
-                return new PrimaryKeyWithByteComparable(indexContext, primaryKeysIterator.next(), byteComparableTerm);
+                return new PrimaryKeyWithByteComparable(indexContext, memtable, primaryKeysIterator.next(), byteComparableTerm);
 
             if (iterator.hasNext())
             {
@@ -401,7 +413,7 @@ public class TrieMemoryIndex extends MemoryIndex
                 // We don't decode this because we want the ByteComparable version of the term.
                 // TODO maybe we do want to decode it, I thought we didn't, but tests started passing once we did.
                 byteComparableTerm = decode(entry.getKey());
-                return new PrimaryKeyWithByteComparable(indexContext, primaryKeysIterator.next(), byteComparableTerm);
+                return new PrimaryKeyWithByteComparable(indexContext, memtable, primaryKeysIterator.next(), byteComparableTerm);
             }
             return endOfData();
         }

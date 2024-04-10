@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sai.utils;
 
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+import org.apache.cassandra.io.sstable.SSTableId;
 
 abstract public class RowIdWithMeta
 {
@@ -36,11 +37,11 @@ abstract public class RowIdWithMeta
         return segmentRowId;
     }
 
-    public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(IndexContext indexContext, PrimaryKeyMap primaryKeyMap, long segmentRowIdOffset)
+    public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(IndexContext indexContext, SSTableId<?> sstableId, PrimaryKeyMap primaryKeyMap, long segmentRowIdOffset)
     {
         var pk = primaryKeyMap.primaryKeyFromRowId(segmentRowIdOffset + segmentRowId);
-        return wrapPrimaryKey(indexContext, pk);
+        return wrapPrimaryKey(indexContext, sstableId, pk);
     }
 
-    abstract protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, PrimaryKey primaryKey);
+    abstract protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, SSTableId<?> sstableId, PrimaryKey primaryKey);
 }

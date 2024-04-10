@@ -81,11 +81,13 @@ public class VectorMemtableIndex implements MemtableIndex
     private PrimaryKey maximumKey;
 
     private final NavigableSet<PrimaryKey> primaryKeys = new ConcurrentSkipListSet<>();
+    private final Memtable mt;
 
-    public VectorMemtableIndex(IndexContext indexContext)
+    public VectorMemtableIndex(IndexContext indexContext, Memtable mt)
     {
         this.indexContext = indexContext;
         this.graph = new CassandraOnHeapGraph<>(indexContext.getValidator(), indexContext.getIndexWriterConfig(), true);
+        this.mt = mt;
     }
 
     @Override
@@ -308,7 +310,7 @@ public class VectorMemtableIndex implements MemtableIndex
                 continue;
             var score = similarityFunction.compare(queryVector, vector);
             if (score >= threshold)
-                collector.add(new PrimaryKeyWithScore(indexContext, key, queryVector, score));
+                collector.add(new PrimaryKeyWithScore(indexContext, mt, key, queryVector, score));
         }
     }
 
@@ -528,7 +530,7 @@ public class VectorMemtableIndex implements MemtableIndex
                 SearchResult.NodeScore nodeScore = nodeScores.next();
                 primaryKeysForNode = graph.keysFromOrdinal(nodeScore.node)
                                           .stream()
-                                          .map(pk -> new PrimaryKeyWithScore(indexContext, pk, queryVector, nodeScore.score))
+                                          .map(pk -> new PrimaryKeyWithScore(indexContext, mt, pk, queryVector, nodeScore.score))
                                           .iterator();
                 if (primaryKeysForNode.hasNext())
                     return primaryKeysForNode.next();
