@@ -18,8 +18,6 @@
 
 package org.apache.cassandra.index.sai.utils;
 
-import java.nio.ByteBuffer;
-
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 
@@ -41,15 +39,5 @@ public class PrimaryKeyWithByteComparable extends PrimaryKeyWithSortKey
 
         // TODO is this the right version?
         return ByteComparable.compare(byteComparable, ((PrimaryKeyWithByteComparable) o).byteComparable, ByteComparable.Version.OSS41);
-    }
-
-    @Override
-    protected boolean isIndexDataValid(ByteBuffer value)
-    {
-        if (value == null)
-            return false;
-        var wrapped = ByteComparable.fixedLength(value);
-        // TODO is the version valid? how efficient is this comparison?
-        return ByteComparable.compare(byteComparable, wrapped, ByteComparable.Version.OSS41) == 0;
     }
 }

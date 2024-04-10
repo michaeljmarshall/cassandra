@@ -18,19 +18,15 @@
 
 package org.apache.cassandra.index.sai.utils;
 
-import java.nio.ByteBuffer;
-
 import org.apache.cassandra.index.sai.IndexContext;
 
 public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
 {
-    private final float[] queryVector;
     private final float indexScore;
 
-    public PrimaryKeyWithScore(IndexContext context, Object source, PrimaryKey primaryKey, float[] queryVector, float indexScore)
+    public PrimaryKeyWithScore(IndexContext context, Object source, PrimaryKey primaryKey, float indexScore)
     {
         super(context, source, primaryKey);
-        this.queryVector = queryVector;
         this.indexScore = indexScore;
     }
 
@@ -42,16 +38,5 @@ public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
 
         // Sort by score in descending order
         return Float.compare(((PrimaryKeyWithScore) o).indexScore, indexScore);
-    }
-
-    @Override
-    protected boolean isIndexDataValid(ByteBuffer value)
-    {
-        // Accept the Primary Key if its score, which comes from its source vector index, is greater than the score
-        // of the row read from storage. If the score is less than the score of the row read from storage,
-        // then it might not be in the global top k.
-        var vector = TypeUtil.decomposeVector(context, value);
-        var realScore = context.getIndexWriterConfig().getSimilarityFunction().compare(queryVector, vector);
-        return indexScore < realScore + 0.0001f;
     }
 }

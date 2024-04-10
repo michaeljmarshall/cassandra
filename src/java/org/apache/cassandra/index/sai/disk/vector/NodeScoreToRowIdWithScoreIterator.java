@@ -35,18 +35,15 @@ public class NodeScoreToRowIdWithScoreIterator extends AbstractIterator<RowIdWit
 {
     private final CloseableIterator<SearchResult.NodeScore> nodeScores;
     private final RowIdsView rowIdsView;
-    private final float[] queryVector;
 
     private PrimitiveIterator.OfInt segmentRowIdIterator = IntStream.empty().iterator();
     private float currentScore;
 
     public NodeScoreToRowIdWithScoreIterator(CloseableIterator<SearchResult.NodeScore> nodeScores,
-                                             RowIdsView rowIdsView,
-                                             float[] queryVector)
+                                             RowIdsView rowIdsView)
     {
         this.nodeScores = nodeScores;
         this.rowIdsView = rowIdsView;
-        this.queryVector = queryVector;
     }
 
     @Override
@@ -55,7 +52,7 @@ public class NodeScoreToRowIdWithScoreIterator extends AbstractIterator<RowIdWit
         try
         {
             if (segmentRowIdIterator.hasNext())
-                return new RowIdWithScore(segmentRowIdIterator.nextInt(), queryVector, currentScore);
+                return new RowIdWithScore(segmentRowIdIterator.nextInt(), currentScore);
 
             while (nodeScores.hasNext())
             {
@@ -64,7 +61,7 @@ public class NodeScoreToRowIdWithScoreIterator extends AbstractIterator<RowIdWit
                 var ordinal = result.node;
                 segmentRowIdIterator = rowIdsView.getSegmentRowIdsMatching(ordinal);
                 if (segmentRowIdIterator.hasNext())
-                    return new RowIdWithScore(segmentRowIdIterator.nextInt(), queryVector, currentScore);
+                    return new RowIdWithScore(segmentRowIdIterator.nextInt(), currentScore);
             }
             return endOfData();
         }

@@ -61,14 +61,8 @@ public abstract class PrimaryKeyWithSortKey implements PrimaryKey
         var cell = row.getCell(context.getDefinition());
         assert cell instanceof CellWithSourceTable : "Expected CellWithSource, got " + cell.getClass();
         assert cell.isLive(nowInSecs) : "Expected live cell, got " + cell;
-        var result1 = sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable());
-        // TODO this check is unnecessary, but I am leaving it for now until I have confirmed the other result1 impl
-        var result2 = isIndexDataValid(cell.buffer());
-        assert result1 == result2 : "Expected " + result1 + ", got " + result2;
-        return result1;
+        return sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable());
     }
-
-    abstract protected boolean isIndexDataValid(ByteBuffer value);
 
     @Override
     public final int hashCode()

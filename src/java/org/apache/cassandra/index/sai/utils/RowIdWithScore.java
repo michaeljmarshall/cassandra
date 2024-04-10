@@ -24,13 +24,11 @@ import org.apache.cassandra.io.sstable.SSTableId;
 
 public class RowIdWithScore extends RowIdWithMeta implements Comparable<RowIdWithScore>
 {
-    private final float[] queryVector;
     private final float score;
 
-    public RowIdWithScore(int segmentRowId, float[] queryVector, float score)
+    public RowIdWithScore(int segmentRowId, float score)
     {
         super(segmentRowId);
-        this.queryVector = queryVector;
         this.score = score;
     }
 
@@ -50,6 +48,6 @@ public class RowIdWithScore extends RowIdWithMeta implements Comparable<RowIdWit
     @Override
     protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, SSTableId<?> sstableId, PrimaryKey primaryKey)
     {
-        return new PrimaryKeyWithScore(indexContext, sstableId, primaryKey, queryVector, score);
+        return new PrimaryKeyWithScore(indexContext, sstableId, primaryKey, score);
     }
 }

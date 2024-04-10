@@ -104,7 +104,7 @@ public class BruteForceRowIdIterator extends AbstractIterator<RowIdWithScore>
             while (!approximateScoreQueue.isEmpty() && exactScoreQueue.size() < topK) {
                 RowWithApproximateScore rowOrdinalScore = approximateScoreQueue.poll();
                 float score = reranker.similarityTo(rowOrdinalScore.ordinal);
-                exactScoreQueue.add(new RowIdWithScore(rowOrdinalScore.rowId, reranker.getQueryVector(), score));
+                exactScoreQueue.add(new RowIdWithScore(rowOrdinalScore.rowId, score));
             }
             rerankedCount = exactScoreQueue.size();
         }

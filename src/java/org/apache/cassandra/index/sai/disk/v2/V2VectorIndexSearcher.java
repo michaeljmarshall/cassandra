@@ -340,7 +340,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
                 assert vector != null : "Vector for ordinal " + ordinal + " is null";
                 var score = similarityFunction.compare(queryVector, vector);
                 if (score >= threshold)
-                    collector.add(new RowIdWithScore(segmentRowId, queryVector, score));
+                    collector.add(new RowIdWithScore(segmentRowId, score));
             }
         }
     }

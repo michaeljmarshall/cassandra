@@ -238,7 +238,7 @@ public class VectorMemtableIndex implements MemtableIndex
         }
 
         var nodeScoreIterator = graph.search(context, queryVector, limit, threshold, bits);
-        return new NodeScoreToScoredPrimaryKeyIterator(nodeScoreIterator, queryVector);
+        return new NodeScoreToScoredPrimaryKeyIterator(nodeScoreIterator);
     }
 
 
@@ -269,7 +269,7 @@ public class VectorMemtableIndex implements MemtableIndex
 
         var bits = new KeyFilteringBits(keysInRange);
         var nodeScoreIterator = graph.search(context, qv, limit, 0, bits);
-        return new NodeScoreToScoredPrimaryKeyIterator(nodeScoreIterator, qv);
+        return new NodeScoreToScoredPrimaryKeyIterator(nodeScoreIterator);
     }
 
     /**
@@ -310,7 +310,7 @@ public class VectorMemtableIndex implements MemtableIndex
                 continue;
             var score = similarityFunction.compare(queryVector, vector);
             if (score >= threshold)
-                collector.add(new PrimaryKeyWithScore(indexContext, mt, key, queryVector, score));
+                collector.add(new PrimaryKeyWithScore(indexContext, mt, key, score));
         }
     }
 
@@ -510,13 +510,11 @@ public class VectorMemtableIndex implements MemtableIndex
     private class NodeScoreToScoredPrimaryKeyIterator extends AbstractIterator<PrimaryKeyWithScore>
     {
         private final Iterator<SearchResult.NodeScore> nodeScores;
-        private final float[] queryVector;
         private Iterator<PrimaryKeyWithScore> primaryKeysForNode = Collections.emptyIterator();
 
-        NodeScoreToScoredPrimaryKeyIterator(Iterator<SearchResult.NodeScore> nodeScores, float[] queryVector)
+        NodeScoreToScoredPrimaryKeyIterator(Iterator<SearchResult.NodeScore> nodeScores)
         {
             this.nodeScores = nodeScores;
-            this.queryVector = queryVector;
         }
 
         @Override
@@ -530,7 +528,7 @@ public class VectorMemtableIndex implements MemtableIndex
                 SearchResult.NodeScore nodeScore = nodeScores.next();
                 primaryKeysForNode = graph.keysFromOrdinal(nodeScore.node)
                                           .stream()
-                                          .map(pk -> new PrimaryKeyWithScore(indexContext, mt, pk, queryVector, nodeScore.score))
+                                          .map(pk -> new PrimaryKeyWithScore(indexContext, mt, pk, nodeScore.score))
                                           .iterator();
                 if (primaryKeysForNode.hasNext())
                     return primaryKeysForNode.next();
