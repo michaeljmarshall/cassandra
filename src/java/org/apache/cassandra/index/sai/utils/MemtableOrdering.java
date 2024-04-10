@@ -48,8 +48,5 @@ public interface MemtableOrdering
      *
      * Assumes that the given  spans the same rows as the implementing index's segment.
      */
-    default CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit)
-    {
-        throw new UnsupportedOperationException();
-    }
+    CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit);
 }

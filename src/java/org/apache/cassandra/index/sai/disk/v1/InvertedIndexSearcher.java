@@ -142,40 +142,6 @@ public class InvertedIndexSearcher extends IndexSearcher implements SegmentOrder
     }
 
     @Override
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader, QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
-    {
-        var pq = new PriorityQueue<PrimaryKeyWithSortKey>();
-        for (var key : keys)
-        {
-            var slices = Slices.with(indexContext.comparator(), Slice.make(key.clustering()));
-            // TODO if we end up needing to read the row still, is it better to store offset and use reader.unfilteredAt?
-            try (var iter = reader.iterator(key.partitionKey(), slices, columnFilter, false, NOOP_LISTENER))
-            {
-                if (iter.hasNext())
-                {
-                    var row = (Row) iter.next();
-                    assert !iter.hasNext();
-                    var cell = row.getCell(indexContext.getDefinition());
-                    if (cell == null)
-                        continue;
-                    // TODO do we need to encode??
-                    var byteComparable = encode(cell.buffer());
-                    // TODO is it okay that we don't have a rowId here? I guess we get to skip it because the index
-                    // reads straight from the sstable.
-                    pq.add(new PrimaryKeyWithByteComparable(indexContext, indexDescriptor.descriptor.id, key, byteComparable));
-                }
-            }
-        }
-        return new PriorityQueueIterator<>(pq);
-    }
-
-    private ByteComparable encode(ByteBuffer input)
-    {
-        return indexContext.isLiteral() ? version -> ByteSource.withTerminator(ByteSource.TERMINATOR, ByteSource.of(input, version))
-                                        : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
-    }
-
-    @Override
     public String toString()
     {
         return MoreObjects.toStringHelper(this)
@@ -201,7 +167,6 @@ public class InvertedIndexSearcher extends IndexSearcher implements SegmentOrder
         RowIdWithTermsIterator(TermsIterator source)
         {
             this.source = source;
-
         }
 
         @Override

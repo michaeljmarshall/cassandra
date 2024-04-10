@@ -89,6 +89,11 @@ public abstract class QuerySet extends CQLTester
                 assertRowsIgnoringOrder(tester.execute("SELECT * FROM %s WHERE value > ? AND value < ?", allRows[min][2], allRows[max][2]),
                         Arrays.copyOfRange(allRows, min + 1, max));
 
+                var result = Arrays.copyOfRange(allRows, min + 1, max);
+                Arrays.sort(result, Comparator.comparing(o -> (Comparable) o[2]));
+                assertRows(tester.execute("SELECT * FROM %s WHERE value > ? AND value < ? ORDER BY value ASC",
+                                          allRows[min][2], allRows[max][2]), result);
+
                 // lower inclusive -> upper exclusive
                 assertRowsIgnoringOrder(tester.execute("SELECT * FROM %s WHERE value >= ? AND value < ?", allRows[min][2], allRows[max][2]),
                         Arrays.copyOfRange(allRows, min, max));
@@ -101,6 +106,15 @@ public abstract class QuerySet extends CQLTester
                 assertRowsIgnoringOrder(tester.execute("SELECT * FROM %s WHERE value >= ? AND value <= ?", allRows[min][2], allRows[max][2]),
                         Arrays.copyOfRange(allRows, min, max + 1));
             }
+
+            // Sort allRows by value
+            var copyOfAllRows = Arrays.copyOf(allRows, allRows.length);
+            Arrays.sort(copyOfAllRows, Comparator.comparing(o -> (Comparable) o[2]));
+            // Sort only
+            assertRows(tester.execute("SELECT * FROM %s ORDER BY value ASC limit 10"),
+                       Arrays.stream(copyOfAllRows).limit(10).toArray(Object[][]::new));
+            assertRows(tester.execute("SELECT * FROM %s ORDER BY value ASC limit 100"),
+                       Arrays.stream(copyOfAllRows).limit(100).toArray(Object[][]::new));
         }
     }
 
@@ -150,7 +164,7 @@ public abstract class QuerySet extends CQLTester
             }
             var copyOfAllRows = Arrays.copyOf(allRows, allRows.length);
             // Sort allRows by value
-            Arrays.sort(copyOfAllRows, Comparator.comparing(a -> ((String) a[2])));
+            Arrays.sort(copyOfAllRows, Comparator.comparing(o -> (Comparable) o[2]));
             assertRows(tester.execute("SELECT * FROM %s ORDER BY value ASC limit 10"),
                        Arrays.stream(copyOfAllRows).limit(10).toArray(Object[][]::new));
             assertRows(tester.execute("SELECT * FROM %s ORDER BY value ASC limit 100"),

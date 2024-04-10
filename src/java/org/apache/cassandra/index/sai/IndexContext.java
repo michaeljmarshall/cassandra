@@ -632,7 +632,7 @@ public class IndexContext
 
         // Only regular columns can be sorted by SAI (at least for now)
         if (op == Operator.SORT_ASC)
-            return TypeUtil.isLiteral(column.type) && column.isRegular();
+            return !isCollection() && column.isRegular();
 
         Expression.Op operator = Expression.Op.valueOf(op);
 

@@ -19,9 +19,11 @@ package org.apache.cassandra.index.sai.disk.v1;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
+import java.util.Iterator;
 import java.util.List;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.collect.Iterators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,8 +42,12 @@ import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
+import org.apache.cassandra.index.sai.utils.RowIdWithByteComparable;
+import org.apache.cassandra.index.sai.utils.RowIdWithMeta;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
+import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
 import static org.apache.cassandra.index.sai.disk.v1.kdtree.BKDQueries.bkdQueryFrom;
 
@@ -106,6 +112,13 @@ public class KDTreeIndexSearcher extends IndexSearcher
         }
     }
 
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
+    {
+        // TODO ascending only right now
+        var iter = new RowIdIterator(bkdReader.iteratorState());
+        return toMetaSortedIterator(iter, queryContext);
+    }
+
     @Override
     public String toString()
     {
@@ -127,5 +140,24 @@ public class KDTreeIndexSearcher extends IndexSearcher
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader, QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
     {
         throw new UnsupportedOperationException();
+    }
+
+    private static class RowIdIterator extends AbstractIterator<RowIdWithByteComparable>
+    {
+        private final BKDReader.IteratorState iterator;
+        RowIdIterator(BKDReader.IteratorState iterator)
+        {
+            this.iterator = iterator;
+        }
+
+        @Override
+        public RowIdWithByteComparable computeNext()
+        {
+            if (!iterator.hasNext())
+                return endOfData();
+
+            var segmentRowId = iterator.next();
+            return new RowIdWithByteComparable(segmentRowId, (v) -> ByteSource.of(iterator.scratch, v));
+        }
     }
 }

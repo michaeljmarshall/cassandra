@@ -19,10 +19,17 @@ package org.apache.cassandra.index.sai.disk.v1;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
+import java.util.PriorityQueue;
 
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.db.RegularAndStaticColumns;
+import org.apache.cassandra.db.Slice;
+import org.apache.cassandra.db.Slices;
+import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
@@ -33,12 +40,19 @@ import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithByteComparable;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
+import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.RowIdWithMeta;
 import org.apache.cassandra.index.sai.utils.RowIdToPrimaryKeyWithSortKeyIterator;
 import org.apache.cassandra.index.sai.utils.SegmentOrdering;
+import org.apache.cassandra.index.sai.utils.TypeUtil;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.io.sstable.format.SSTableReadsListener;
 import org.apache.cassandra.utils.CloseableIterator;
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
+import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
 /**
  * Abstract reader for individual segments of an on-disk index.
@@ -54,6 +68,10 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
     final IndexDescriptor indexDescriptor;
     protected final IndexContext indexContext;
 
+    private static final SSTableReadsListener NOOP_LISTENER = new SSTableReadsListener() {};
+
+    private final ColumnFilter columnFilter;
+
     protected IndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
                             PerIndexFiles perIndexFiles,
                             SegmentMetadata segmentMetadata,
@@ -65,6 +83,7 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
         this.metadata = segmentMetadata;
         this.indexDescriptor = indexDescriptor;
         this.indexContext = indexContext;
+        columnFilter = ColumnFilter.selection(RegularAndStaticColumns.of(indexContext.getDefinition()));
     }
 
     /**
@@ -93,9 +112,41 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
      * @param limit        the num of rows to returned, used by ANN index
      * @return an iterator of {@link PrimaryKeyWithSortKey} in score order
      */
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
+    abstract public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException;
+
+
+    @Override
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader, QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
     {
-        throw new UnsupportedOperationException();
+        var pq = new PriorityQueue<PrimaryKeyWithSortKey>();
+        for (var key : keys)
+        {
+            var slices = Slices.with(indexContext.comparator(), Slice.make(key.clustering()));
+            // TODO if we end up needing to read the row still, is it better to store offset and use reader.unfilteredAt?
+            try (var iter = reader.iterator(key.partitionKey(), slices, columnFilter, false, NOOP_LISTENER))
+            {
+                if (iter.hasNext())
+                {
+                    var row = (Row) iter.next();
+                    assert !iter.hasNext();
+                    var cell = row.getCell(indexContext.getDefinition());
+                    if (cell == null)
+                        continue;
+                    // TODO do we need to encode??
+                    var byteComparable = encode(cell.buffer());
+                    // TODO is it okay that we don't have a rowId here? I guess we get to skip it because the index
+                    // reads straight from the sstable.
+                    pq.add(new PrimaryKeyWithByteComparable(indexContext, indexDescriptor.descriptor.id, key, byteComparable));
+                }
+            }
+        }
+        return new PriorityQueueIterator<>(pq);
+    }
+
+    private ByteComparable encode(ByteBuffer input)
+    {
+        return indexContext.isLiteral() ? version -> ByteSource.withTerminator(ByteSource.TERMINATOR, ByteSource.of(input, version))
+                                        : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
     }
 
     protected RangeIterator toPrimaryKeyIterator(PostingList postingList, QueryContext queryContext) throws IOException
