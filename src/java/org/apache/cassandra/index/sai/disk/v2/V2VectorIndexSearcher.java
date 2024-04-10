@@ -59,6 +59,7 @@ import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
 import org.apache.cassandra.index.sai.utils.RowIdWithScore;
 import org.apache.cassandra.index.sai.utils.SegmentOrdering;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.metrics.LinearFit;
 import org.apache.cassandra.metrics.PairedSlidingWindowReservoir;
 import org.apache.cassandra.metrics.QuickSlidingWindowReservoir;
@@ -423,7 +424,8 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     }
 
     @Override
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context,
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader,
+                                                                             QueryContext context,
                                                                              List<PrimaryKey> keys,
                                                                              Expression exp,
                                                                              int limit) throws IOException

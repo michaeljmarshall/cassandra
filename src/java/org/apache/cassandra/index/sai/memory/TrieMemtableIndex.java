@@ -193,6 +193,27 @@ public class TrieMemtableIndex implements MemtableIndex
 
         // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
         // way to get this working based on the current API.
+//        return MergeIterator.get(pq, Comparator.naturalOrder());
+        return new MergePrimaryWithSortKeyIterator(pq, List.of());
+    }
+
+    @Override
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit)
+    {
+        int startShard = boundaries.getShardForToken(keys.get(0).token());
+        int endShard = boundaries.getShardForToken(keys.get(keys.size() - 1).token());
+
+        var pq = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(endShard - startShard + 1);
+
+        for (int shard  = startShard; shard <= endShard; ++shard)
+        {
+            assert rangeIndexes[shard] != null;
+            // todo get subset of keys relevant to this shard
+            pq.add(rangeIndexes[shard].orderResultsBy(context, keys, exp, limit));
+        }
+
+        // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
+        // way to get this working based on the current API.
         return new MergePrimaryWithSortKeyIterator(pq, List.of());
     }
 

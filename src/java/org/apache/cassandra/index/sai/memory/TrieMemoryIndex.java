@@ -26,6 +26,7 @@ package org.apache.cassandra.index.sai.memory;
 
 import java.nio.ByteBuffer;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.SortedSet;
@@ -54,6 +55,7 @@ import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithByteComparable;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeys;
+import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.AbstractIterator;
@@ -174,12 +176,36 @@ public class TrieMemoryIndex extends MemoryIndex
         };
     }
 
+    @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(QueryContext queryContext, Expression expression, AbstractBounds<PartitionPosition> keyRange, int limit)
     {
         if (data.isEmpty())
             return CloseableIterator.emptyIterator();
         // TODO only ascending right now...
         return new AllTermsIterator(data.entrySet().iterator());
+    }
+
+    @Override
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit)
+    {
+        if (data.isEmpty())
+            return CloseableIterator.emptyIterator();
+        var pq = new PriorityQueue<PrimaryKeyWithSortKey>();
+        //
+        for (PrimaryKey key : keys)
+        {
+            var partition = memtable.getPartition(key.partitionKey());
+            if (partition == null)
+                continue;
+            var row = partition.getRow(key.clustering());
+            if (row == null)
+                continue;
+            var cell = row.getCell(indexContext.getDefinition());
+            if (cell == null)
+                continue;
+            pq.add(new PrimaryKeyWithByteComparable(indexContext, memtable, key, encode(cell.buffer())));
+        }
+        return new PriorityQueueIterator<>(pq);
     }
 
     @Override

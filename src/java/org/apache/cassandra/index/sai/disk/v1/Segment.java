@@ -60,6 +60,7 @@ public class Segment implements Closeable
     public final PerIndexFiles indexFiles;
     // per-segment
     public final SegmentMetadata metadata;
+    public final SSTableContext sstableContext;
 
     private final IndexSearcher index;
 
@@ -68,6 +69,7 @@ public class Segment implements Closeable
         this.minKeyBound = metadata.minKey.token().minKeyBound();
         this.maxKeyBound = metadata.maxKey.token().maxKeyBound();
 
+        this.sstableContext = sstableContext;
         this.primaryKeyMapFactory = sstableContext.primaryKeyMapFactory();
         this.indexFiles = indexFiles;
         this.metadata = metadata;
@@ -96,6 +98,7 @@ public class Segment implements Closeable
         this.minKeyBound = null;
         this.maxKeyBound = null;
         this.index = null;
+        this.sstableContext = null;
     }
 
     @VisibleForTesting
@@ -107,6 +110,7 @@ public class Segment implements Closeable
         this.minKeyBound = minKey.minKeyBound();
         this.maxKeyBound = maxKey.maxKeyBound();
         this.index = null;
+        this.sstableContext = null;
     }
 
     /**
@@ -184,7 +188,7 @@ public class Segment implements Closeable
 
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
     {
-        return index.orderResultsBy(context, keys, exp, limit);
+        return index.orderResultsBy(sstableContext.sstable, context, keys, exp, limit);
     }
 
     @Override

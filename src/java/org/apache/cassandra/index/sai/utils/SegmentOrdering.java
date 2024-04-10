@@ -55,8 +55,5 @@ public interface SegmentOrdering
      * Order a list of primary keys to the top results. The limit is a hint indicating the minimum number of
      * results the query requested.
      */
-    default CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
-    {
-        throw new UnsupportedOperationException();
-    }
+    CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader, QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException;
 }
