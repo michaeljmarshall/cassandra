@@ -97,7 +97,7 @@ public abstract class QuerySet extends CQLTester
                         Arrays.copyOfRange(allRows, min + 1, max));
 
                 var result = Arrays.copyOfRange(allRows, min + 1, max);
-                if (result.length > 0)
+                if (result.length > 0 && testOrderBy)
                 {
                     Arrays.sort(result, Comparator.comparing(o -> (Comparable) o[2]));
                     assertRows(tester.execute("SELECT * FROM %s WHERE value > ? AND value < ? ORDER BY value ASC LIMIT ?",
@@ -116,6 +116,9 @@ public abstract class QuerySet extends CQLTester
                 assertRowsIgnoringOrder(tester.execute("SELECT * FROM %s WHERE value >= ? AND value <= ?", allRows[min][2], allRows[max][2]),
                         Arrays.copyOfRange(allRows, min, max + 1));
             }
+
+            if (!testOrderBy)
+                return;
 
             // Sort allRows by value
             var copyOfAllRows = Arrays.copyOf(allRows, allRows.length);

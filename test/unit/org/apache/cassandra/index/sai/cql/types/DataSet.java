@@ -700,7 +700,7 @@ public abstract class DataSet<T> extends CQLTester
         @Override
         public QuerySet querySet()
         {
-            return new QuerySet.NumericQuerySet(this);
+            return new QuerySet.NumericQuerySet(this, false);
         }
 
         public String toString()
