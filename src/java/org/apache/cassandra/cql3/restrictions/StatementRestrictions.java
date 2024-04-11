@@ -348,6 +348,13 @@ public class StatementRestrictions
             RestrictionSet.Builder nonPrimaryKeyRestrictionSet = RestrictionSet.builder();
             ImmutableSet.Builder<ColumnMetadata> notNullColumnsBuilder = ImmutableSet.builder();
 
+
+            // ORDER BY clause. We add it first because orderings are not really restrictions
+            // and by adding first, we ensure that merging restrictions works as expected.
+            // The long term solution will break ordering out into its own abstraction.
+            if (nestingLevel == 0)
+                addOrderingRestrictions(orderings, nonPrimaryKeyRestrictionSet);
+
             /*
              * WHERE clause. For a given entity, rules are:
              *   - EQ relation conflicts with anything else (including a 2nd EQ)
@@ -415,12 +422,6 @@ public class StatementRestrictions
                     }
                 }
             }
-
-            // ORDER BY clause.
-            // Some indexes can be used for ordering.
-            // need to figure out if we have an ordering that is on for an index
-            if (nestingLevel == 0)
-                addOrderingRestrictions(orderings, nonPrimaryKeyRestrictionSet);
 
             PartitionKeyRestrictions partitionKeyRestrictions = partitionKeyRestrictionSet.build();
             ClusteringColumnRestrictions clusteringColumnsRestrictions = clusteringColumnsRestrictionSet.build();

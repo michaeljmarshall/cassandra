@@ -90,9 +90,12 @@ public abstract class QuerySet extends CQLTester
                         Arrays.copyOfRange(allRows, min + 1, max));
 
                 var result = Arrays.copyOfRange(allRows, min + 1, max);
-                Arrays.sort(result, Comparator.comparing(o -> (Comparable) o[2]));
-                assertRows(tester.execute("SELECT * FROM %s WHERE value > ? AND value < ? ORDER BY value ASC",
-                                          allRows[min][2], allRows[max][2]), result);
+                if (result.length > 0)
+                {
+                    Arrays.sort(result, Comparator.comparing(o -> (Comparable) o[2]));
+                    assertRows(tester.execute("SELECT * FROM %s WHERE value > ? AND value < ? ORDER BY value ASC LIMIT ?",
+                                              allRows[min][2], allRows[max][2], result.length), result);
+                }
 
                 // lower inclusive -> upper exclusive
                 assertRowsIgnoringOrder(tester.execute("SELECT * FROM %s WHERE value >= ? AND value < ?", allRows[min][2], allRows[max][2]),

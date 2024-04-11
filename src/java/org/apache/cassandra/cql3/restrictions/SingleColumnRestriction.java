@@ -994,10 +994,17 @@ public abstract class SingleColumnRestriction implements SingleRestriction
     // TODO how can we make this a column sorter instead of restricter
     public static final class OrderRestriction extends SingleColumnRestriction
     {
+        private final SingleColumnRestriction otherRestriction;
 
         public OrderRestriction(ColumnMetadata columnDef)
         {
+            this(columnDef, null);
+        }
+
+        private OrderRestriction(ColumnMetadata columnDef, SingleColumnRestriction otherRestriction)
+        {
             super(columnDef);
+            this.otherRestriction = otherRestriction;
         }
 
         @Override
@@ -1018,6 +1025,8 @@ public abstract class SingleColumnRestriction implements SingleRestriction
                                    QueryOptions options)
         {
             filter.add(columnDef, Operator.SORT_ASC, ByteBufferUtil.EMPTY_BYTE_BUFFER);
+            if (otherRestriction != null)
+                otherRestriction.addToRowFilter(filter, indexRegistry, options);
         }
 
         @Override
@@ -1035,13 +1044,20 @@ public abstract class SingleColumnRestriction implements SingleRestriction
         @Override
         public SingleRestriction doMergeWith(SingleRestriction otherRestriction)
         {
-            throw invalidRequest("%s cannot be restricted by both SORT and %s", columnDef.name, otherRestriction.toString());
+            if (!(otherRestriction instanceof SingleColumnRestriction))
+                throw invalidRequest("%s cannot be restricted by both SORT and %s", columnDef.name, otherRestriction.toString());
+            var otherSingleColumnRestriction = (SingleColumnRestriction) otherRestriction;
+            if (this.otherRestriction == null)
+                return new OrderRestriction(columnDef, otherSingleColumnRestriction);
+            var mergedOtherRestriction = this.otherRestriction.doMergeWith(otherSingleColumnRestriction);
+            return new OrderRestriction(columnDef, (SingleColumnRestriction) mergedOtherRestriction);
         }
 
         @Override
         protected boolean isSupportedBy(Index index)
         {
-            return index.supportsExpression(columnDef, Operator.SORT_ASC);
+            return index.supportsExpression(columnDef, Operator.SORT_ASC)
+                   && (otherRestriction == null || otherRestriction.isSupportedBy(index));
         }
 
         @Override

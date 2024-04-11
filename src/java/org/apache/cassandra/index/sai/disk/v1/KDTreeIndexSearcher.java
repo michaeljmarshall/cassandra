@@ -136,12 +136,6 @@ public class KDTreeIndexSearcher extends IndexSearcher
         bkdReader.close();
     }
 
-    @Override
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader, QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
-    {
-        throw new UnsupportedOperationException();
-    }
-
     private static class RowIdIterator extends AbstractIterator<RowIdWithByteComparable>
     {
         private final BKDReader.IteratorState iterator;

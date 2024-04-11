@@ -494,7 +494,8 @@ public class QueryController implements Plan.Executor
         // eagerly can save some work when going from PK to row id for on disk segments.
         // Since the result is shared with multiple streams, we use an unmodifiable list.
         var planExpression = new Expression(this.getContext(expression));
-        planExpression.add(Operator.ANN, expression.getIndexValue().duplicate());
+        // todo what goes here
+        planExpression.add(expression.operator(), expression.operator() == Operator.ANN ? expression.getIndexValue().duplicate() : null);
 
         // search memtable before referencing sstable indexes; otherwise we may miss newly flushed memtable index
         var memtableResults = this.getContext(expression)
