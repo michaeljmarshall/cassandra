@@ -57,10 +57,12 @@ public class Ordering
     public static class SingleColumn implements Expression
     {
         public final ColumnMetadata column;
+        private final Ordering.Direction direction;
 
-        public SingleColumn(ColumnMetadata column)
+        public SingleColumn(ColumnMetadata column, Ordering.Direction direction)
         {
             this.column = column;
+            this.direction = direction;
         }
 
         @Override
@@ -73,9 +75,8 @@ public class Ordering
         @Override
         public SingleRestriction toRestriction()
         {
-            return new SingleColumnRestriction.OrderRestriction(column);
+            return new SingleColumnRestriction.OrderRestriction(column, direction == Direction.DESC ? Operator.SORT_DESC : Operator.SORT_ASC);
         }
-
 
         @Override
         public ColumnMetadata getColumn()
@@ -92,11 +93,13 @@ public class Ordering
     {
         final ColumnMetadata column;
         final Term vectorValue;
+        final Direction direction;
 
-        public Ann(ColumnMetadata column, Term vectorValue)
+        public Ann(ColumnMetadata column, Term vectorValue, Direction direction)
         {
             this.column = column;
             this.vectorValue = vectorValue;
+            this.direction = direction;
         }
 
         @Override
@@ -144,12 +147,12 @@ public class Ordering
          */
         public Ordering bind(TableMetadata table, VariableSpecifications boundNames)
         {
-            return new Ordering(expression.bind(table, boundNames), direction);
+            return new Ordering(expression.bind(table, boundNames, direction), direction);
         }
 
         public interface Expression
         {
-            Ordering.Expression bind(TableMetadata table, VariableSpecifications boundNames);
+            Ordering.Expression bind(TableMetadata table, VariableSpecifications boundNames, Ordering.Direction direction);
         }
 
         public static class SingleColumn implements Expression
@@ -162,9 +165,9 @@ public class Ordering
             }
 
             @Override
-            public Ordering.Expression bind(TableMetadata table, VariableSpecifications boundNames)
+            public Ordering.Expression bind(TableMetadata table, VariableSpecifications boundNames, Ordering.Direction direction)
             {
-                return new Ordering.SingleColumn(table.getExistingColumn(column));
+                return new Ordering.SingleColumn(table.getExistingColumn(column), direction);
             }
         }
 
@@ -180,12 +183,12 @@ public class Ordering
             }
 
             @Override
-            public Ordering.Expression bind(TableMetadata table, VariableSpecifications boundNames)
+            public Ordering.Expression bind(TableMetadata table, VariableSpecifications boundNames, Direction direction)
             {
                 ColumnMetadata column = table.getExistingColumn(columnId);
                 Term value = vectorValue.prepare(table.keyspace, column);
                 value.collectMarkerSpecification(boundNames);
-                return new Ordering.Ann(column, value);
+                return new Ordering.Ann(column, value, direction);
             }
         }
     }

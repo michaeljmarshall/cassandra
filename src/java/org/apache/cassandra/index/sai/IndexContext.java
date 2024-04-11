@@ -633,7 +633,7 @@ public class IndexContext
             return false;
 
         // Only regular columns can be sorted by SAI (at least for now)
-        if (op == Operator.SORT_ASC)
+        if (op == Operator.SORT_ASC || op == Operator.SORT_DESC)
             return !isCollection()
                    && column.isRegular()
                    &&  !(column.type instanceof SimpleDateType

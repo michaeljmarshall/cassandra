@@ -995,16 +995,21 @@ public abstract class SingleColumnRestriction implements SingleRestriction
     public static final class OrderRestriction extends SingleColumnRestriction
     {
         private final SingleColumnRestriction otherRestriction;
+        private final Operator direction;
 
-        public OrderRestriction(ColumnMetadata columnDef)
+        public OrderRestriction(ColumnMetadata columnDef, Operator direction)
         {
-            this(columnDef, null);
+            this(columnDef, null, direction);
         }
 
-        private OrderRestriction(ColumnMetadata columnDef, SingleColumnRestriction otherRestriction)
+        private OrderRestriction(ColumnMetadata columnDef, SingleColumnRestriction otherRestriction, Operator direction)
         {
             super(columnDef);
             this.otherRestriction = otherRestriction;
+            this.direction = direction;
+
+            if (direction != Operator.SORT_ASC && direction != Operator.SORT_DESC)
+                throw new IllegalArgumentException("Ordering restriction must be ASC or DESC");
         }
 
         @Override
@@ -1024,7 +1029,7 @@ public abstract class SingleColumnRestriction implements SingleRestriction
                                    IndexRegistry indexRegistry,
                                    QueryOptions options)
         {
-            filter.add(columnDef, Operator.SORT_ASC, ByteBufferUtil.EMPTY_BYTE_BUFFER);
+            filter.add(columnDef, direction, ByteBufferUtil.EMPTY_BYTE_BUFFER);
             if (otherRestriction != null)
                 otherRestriction.addToRowFilter(filter, indexRegistry, options);
         }
@@ -1048,9 +1053,9 @@ public abstract class SingleColumnRestriction implements SingleRestriction
                 throw invalidRequest("%s cannot be restricted by both SORT and %s", columnDef.name, otherRestriction.toString());
             var otherSingleColumnRestriction = (SingleColumnRestriction) otherRestriction;
             if (this.otherRestriction == null)
-                return new OrderRestriction(columnDef, otherSingleColumnRestriction);
+                return new OrderRestriction(columnDef, otherSingleColumnRestriction, direction);
             var mergedOtherRestriction = this.otherRestriction.doMergeWith(otherSingleColumnRestriction);
-            return new OrderRestriction(columnDef, (SingleColumnRestriction) mergedOtherRestriction);
+            return new OrderRestriction(columnDef, (SingleColumnRestriction) mergedOtherRestriction, direction);
         }
 
         @Override
