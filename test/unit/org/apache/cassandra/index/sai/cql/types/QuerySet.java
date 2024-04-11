@@ -43,9 +43,16 @@ public abstract class QuerySet extends CQLTester
 
     public static class NumericQuerySet extends QuerySet
     {
+        private final boolean testOrderBy;
         NumericQuerySet(DataSet<?> dataset)
         {
+            this(dataset, true);
+        }
+
+        NumericQuerySet(DataSet<?> dataset, boolean testOrderBy)
+        {
             super(dataset);
+            this.testOrderBy = testOrderBy;
         }
 
         @Override
@@ -152,9 +159,17 @@ public abstract class QuerySet extends CQLTester
 
     public static class LiteralQuerySet extends QuerySet
     {
+        private final boolean testOrderby;
+
         LiteralQuerySet(DataSet<?> dataSet)
         {
+            this(dataSet, true);
+        }
+
+        LiteralQuerySet(DataSet<?> dataSet, boolean testOrderby)
+        {
             super(dataSet);
+            this.testOrderby = testOrderby;
         }
 
         @Override
@@ -165,6 +180,11 @@ public abstract class QuerySet extends CQLTester
             {
                 assertRows(tester.execute("SELECT * FROM %s WHERE value = ?", allRows[index][2]), new Object[][] { allRows[index] });
             }
+
+            // Some literal types do not support ORDER BY yet, so we skip those
+            if (!testOrderby)
+                return;
+
             var copyOfAllRows = Arrays.copyOf(allRows, allRows.length);
             // Sort allRows by value
             Arrays.sort(copyOfAllRows, Comparator.comparing(o -> (Comparable) o[2]));

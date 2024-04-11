@@ -508,10 +508,14 @@ public abstract class DataSet<T> extends CQLTester
             }
         }
 
+        // SimpleDateSerializer currently writes signed integers as unsigned, and therefore the values are not sorted
+        // correctly, so sorting dates is not available at this time.
+        // NOTE: becuase Date maps to integer, we technically allow range queries, but they will fail for any range
+        // that crosses the 0 boundary because of the way they are serialized.
         @Override
         public QuerySet querySet()
         {
-            return new QuerySet.LiteralQuerySet(this);
+            return new QuerySet.LiteralQuerySet(this, false);
         }
 
         public String toString()
@@ -614,7 +618,7 @@ public abstract class DataSet<T> extends CQLTester
         @Override
         public QuerySet querySet()
         {
-            return new QuerySet.LiteralQuerySet(this);
+            return new QuerySet.LiteralQuerySet(this, false);
         }
 
         public String toString()

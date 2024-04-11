@@ -51,6 +51,8 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.marshal.BooleanType;
 import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.InetAddressType;
+import org.apache.cassandra.db.marshal.SimpleDateType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.db.marshal.VectorType;
@@ -632,7 +634,11 @@ public class IndexContext
 
         // Only regular columns can be sorted by SAI (at least for now)
         if (op == Operator.SORT_ASC)
-            return !isCollection() && column.isRegular();
+            return !isCollection()
+                   && column.isRegular()
+                   &&  !(column.type instanceof SimpleDateType
+                         || column.type instanceof InetAddressType
+                         || column.type instanceof UUIDType);
 
         Expression.Op operator = Expression.Op.valueOf(op);
 
