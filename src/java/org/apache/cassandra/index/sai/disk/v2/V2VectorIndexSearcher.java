@@ -52,6 +52,7 @@ import org.apache.cassandra.index.sai.disk.vector.CloseableReranker;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
 import org.apache.cassandra.index.sai.disk.vector.VectorMemtableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
@@ -145,18 +146,17 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     }
 
     @Override
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context, int limit) throws IOException
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Orderer orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context, int limit) throws IOException
     {
         if (logger.isTraceEnabled())
-            logger.trace(indexContext.logMessage("Searching on expression '{}'..."), exp);
+            logger.trace(indexContext.logMessage("Searching on expression '{}'..."), orderer);
 
-        if (exp.getOp() != Expression.Op.ANN)
-            throw new IllegalArgumentException(indexContext.logMessage("Unsupported expression during ANN index query: " + exp));
+        if (orderer.vector == null)
+            throw new IllegalArgumentException(indexContext.logMessage("Unsupported expression during ANN index query: " + orderer));
 
         int topK = indexContext.getIndexWriterConfig().getSourceModel().topKFor(limit, graph.getCompressedVectors());
-        float[] queryVector = exp.lower.value.vector;
 
-        var result = searchInternal(keyRange, context, queryVector, limit, topK, 0);
+        var result = searchInternal(keyRange, context, orderer.vector, limit, topK, 0);
         return toMetaSortedIterator(result, context);
     }
 
@@ -427,7 +427,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader,
                                                                              QueryContext context,
                                                                              List<PrimaryKey> keys,
-                                                                             Expression exp,
+                                                                             Orderer orderer,
                                                                              int limit) throws IOException
     {
         List<PrimaryKey> keysInRange = getKeysInRange(keys);
@@ -449,11 +449,11 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         if (cost.shouldUseBruteForce())
         {
             // brute force using the in-memory compressed vectors to cut down the number of results returned
-            var queryVector = exp.lower.value.vector;
+            var queryVector = orderer.vector;
             return toMetaSortedIterator(this.orderByBruteForce(queryVector, rowIds, limit, topK), context);
         }
         // else ask the index to perform a search limited to the bits we created
-        float[] queryVector = exp.lower.value.vector;
+        float[] queryVector = orderer.vector;
         var results = graph.search(queryVector, topK, 0, bits, context, cost::updateStatistics);
         return toMetaSortedIterator(results, context);
     }

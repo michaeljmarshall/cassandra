@@ -236,14 +236,6 @@ public class Expression
                 else
                     lower = new Bound(value, validator, lowerInclusive);
                 break;
-            case ANN:
-                operation = Op.ANN;
-                lower = new Bound(value, validator, true);
-                upper = lower;
-                break;
-            case SORT_ASC:
-                operation = Op.SORT_ASC;
-                break;
             case BOUNDED_ANN:
                 operation = Op.BOUNDED_ANN;
                 lower = new Bound(value, validator, true);
@@ -251,6 +243,8 @@ public class Expression
                 searchRadiusMeters = FloatType.instance.compose(upper.value.raw);
                 boundedAnnEuclideanDistanceThreshold = GeoUtil.amplifiedEuclideanSimilarityThreshold(lower.value.vector, searchRadiusMeters);
                 break;
+            default:
+                throw new UnsupportedOperationException("Unsupported operator: " + op);
         }
 
         assert operation != null;

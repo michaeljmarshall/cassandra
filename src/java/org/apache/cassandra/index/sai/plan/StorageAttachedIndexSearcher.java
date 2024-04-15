@@ -79,13 +79,14 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
     public StorageAttachedIndexSearcher(ColumnFamilyStore cfs,
                                         TableQueryMetrics tableQueryMetrics,
                                         ReadCommand command,
+                                        Orderer orderer,
                                         IndexFeatureSet indexFeatureSet,
                                         long executionQuotaMs)
     {
         this.command = command;
         this.cfs = cfs;
         this.queryContext = new QueryContext(executionQuotaMs);
-        this.controller = new QueryController(cfs, command, indexFeatureSet, queryContext, tableQueryMetrics);
+        this.controller = new QueryController(cfs, command, orderer, indexFeatureSet, queryContext, tableQueryMetrics);
     }
 
     @Override
@@ -119,14 +120,12 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
     @SuppressWarnings("unchecked")
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) throws RequestTimeoutException
     {
+        FilterTree filterTree = analyzeFilter();
         if (command.isTopK())
         {
-            FilterTree filterTree = analyzeFilter();
-            var ordering = filterTree.expressions.values().stream().filter(e -> e.operation == Expression.Op.ANN || e.operation == Expression.Op.SORT_ASC).collect(Collectors.toList());
-            assert ordering.size() == 1 : "TopK queries must have exactly one ordering expression " + ordering;
             // TopK queries require a consistent view of the sstables and memtables in order to validate overwritten
             // rows. Acquire the view before building any of the iterators.
-            try (var queryView = new QueryViewBuilder(cfs, ordering.get(0), controller.mergeRange(), queryContext).build())
+            try (var queryView = new QueryViewBuilder(cfs, controller.getOrderer(), controller.mergeRange(), queryContext).build())
             {
                 // TODO this is a bit of a hack, but we need to get the view from the queryView. Find better way to
                 // thread this through.
@@ -141,7 +140,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         }
         else
         {
-            FilterTree filterTree = analyzeFilter();
             Iterator<? extends PrimaryKey> keysIterator = controller.buildIterator();
             assert keysIterator instanceof RangeIterator;
             return new ResultRetriever((RangeIterator) keysIterator, filterTree, controller, executionController, queryContext);

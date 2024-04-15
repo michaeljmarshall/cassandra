@@ -54,6 +54,7 @@ import org.apache.cassandra.index.sai.SAITester;
 import org.apache.cassandra.index.sai.disk.vector.VectorMemtableIndex;
 import org.apache.cassandra.index.sai.disk.vector.VectorSourceModel;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithScore;
 import org.apache.cassandra.inject.Injections;
@@ -132,7 +133,7 @@ public class VectorMemtableIndexTest extends SAITester
 
         for (int executionCount = 0; executionCount < 1000; executionCount++)
         {
-            Expression expression = generateRandomExpression();
+            var orderer = generateRandomOrderer();
             AbstractBounds<PartitionPosition> keyRange = generateRandomBounds(keys);
             Set<Integer> keysInRange = keys.stream().filter(keyRange::contains)
                                            .map(k -> Int32Type.instance.compose(k.getKey()))
@@ -143,7 +144,7 @@ public class VectorMemtableIndexTest extends SAITester
 
             long expectedNumResults = Math.min(VectorSourceModel.OTHER.topKFor(limit, null), keysInRange.size());
 
-            try (var iterator = memtableIndex.orderBy(new QueryContext(), expression, keyRange, limit))
+            try (var iterator = memtableIndex.orderBy(new QueryContext(), orderer, keyRange, limit))
             {
                 PrimaryKeyWithScore lastKey = null;
                 while (iterator.hasNext() && expectedNumResults > foundKeys.size())
@@ -183,11 +184,9 @@ public class VectorMemtableIndexTest extends SAITester
         // VSTODO
     }
 
-    private Expression generateRandomExpression()
+    private Orderer generateRandomOrderer()
     {
-        Expression expression = new Expression(indexContext);
-        expression.add(Operator.ANN, randomVector());
-        return expression;
+        return new Orderer(indexContext, Operator.ANN, randomVector());
     }
 
     private ByteBuffer randomVector() {

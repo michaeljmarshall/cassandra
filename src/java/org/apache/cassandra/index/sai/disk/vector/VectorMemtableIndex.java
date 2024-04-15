@@ -40,6 +40,7 @@ import org.slf4j.LoggerFactory;
 
 import io.github.jbellis.jvector.graph.SearchResult;
 import io.github.jbellis.jvector.util.Bits;
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
@@ -51,6 +52,7 @@ import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.memory.MemtableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
@@ -189,13 +191,11 @@ public class VectorMemtableIndex implements MemtableIndex
     }
 
     @Override
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(QueryContext context, Expression expr, AbstractBounds<PartitionPosition> keyRange, int limit)
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(QueryContext context, Orderer orderer, AbstractBounds<PartitionPosition> keyRange, int limit)
     {
-        assert expr.getOp() == Expression.Op.ANN : "Only ANN is supported for vector search, received " + expr.getOp();
+        assert orderer.operator == Operator.ANN : "Only ANN is supported for vector search, received " + orderer.operator;
 
-        float[] qv = expr.lower.value.vector;
-
-        return searchInternal(context, qv, keyRange, limit, 0);
+        return searchInternal(context, orderer.vector, keyRange, limit, 0);
     }
 
     private CloseableIterator<PrimaryKeyWithScore> searchInternal(QueryContext context,
@@ -249,13 +249,14 @@ public class VectorMemtableIndex implements MemtableIndex
 
 
     @Override
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit)
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit)
     {
         if (minimumKey == null)
             // This case implies maximumKey is empty too.
             return CloseableIterator.emptyIterator();
 
-        float[] qv = exp.lower.value.vector;
+        assert orderer.operator == Operator.ANN : "Only ANN is supported for vector search, received " + orderer.operator;
+        float[] qv = orderer.vector;
         List<PrimaryKey> keysInRange = keys.stream()
                                            .dropWhile(k -> k.compareTo(minimumKey) < 0)
                                            .takeWhile(k -> k.compareTo(maximumKey) <= 0)

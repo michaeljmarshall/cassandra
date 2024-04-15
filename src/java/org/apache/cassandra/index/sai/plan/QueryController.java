@@ -110,6 +110,7 @@ public class QueryController implements Plan.Executor
 
     private final ColumnFamilyStore cfs;
     private final ReadCommand command;
+    private final Orderer orderer;
     private final int limit;
     private final QueryContext queryContext;
     private final TableQueryMetrics tableQueryMetrics;
@@ -144,14 +145,26 @@ public class QueryController implements Plan.Executor
                                   QUERY_OPT_LEVEL));
     }
 
+    @VisibleForTesting
     public QueryController(ColumnFamilyStore cfs,
                            ReadCommand command,
                            IndexFeatureSet indexFeatureSet,
                            QueryContext queryContext,
                            TableQueryMetrics tableQueryMetrics)
     {
+        this(cfs, command, null, indexFeatureSet, queryContext, tableQueryMetrics);
+    }
+
+    public QueryController(ColumnFamilyStore cfs,
+                           ReadCommand command,
+                           Orderer orderer,
+                           IndexFeatureSet indexFeatureSet,
+                           QueryContext queryContext,
+                           TableQueryMetrics tableQueryMetrics)
+    {
         this.cfs = cfs;
         this.command = command;
+        this.orderer = orderer;
         this.queryContext = queryContext;
         this.limit = command.limits().count();
         this.tableQueryMetrics = tableQueryMetrics;
@@ -188,7 +201,11 @@ public class QueryController implements Plan.Executor
 
     RowFilter.FilterElement filterOperation()
     {
-        return this.command.rowFilter().root();
+        // TODO I am pretty sure it is okay to remove orderers here, but it seems semi-risky.
+        // The primary change in semantics is in the FilterTree class where we'll no longer
+        // validate that a column's value is not null. I think that's fine though as long as
+        // we move that logic somewhere else in the stack.
+        return this.command.rowFilter().root().filter(e -> !Orderer.isFilterExpressionOrderer(e));
     }
 
     /**
@@ -311,24 +328,13 @@ public class QueryController implements Plan.Executor
 
     private Plan.KeysIteration buildKeysIterationPlan()
     {
-        // VSTODO we can clean this up when we break ordering out
-        var filterRoot = command.rowFilter().root();
-        var nonOrderingExpressions = filterRoot.expressions().stream()
-                                               .filter(e -> e.operator() != Operator.ANN)
-                                               .collect(Collectors.toList());
-
-        Plan.KeysIteration keysIterationPlan = Operation.Node.buildTree(nonOrderingExpressions, filterRoot.children(), filterRoot.isDisjunction())
+        Plan.KeysIteration keysIterationPlan = Operation.Node.buildTree(filterOperation())
                                                              .analyzeTree(this)
                                                              .plan(this);
 
-        var orderings = filterRoot.expressions().stream()
-                                  .filter(e -> e.operator() == Operator.ANN || e.operator() == Operator.SORT_ASC)
-                                  .collect(Collectors.toList());
-        if (!orderings.isEmpty())
-        {
-            assert orderings.size() == 1;
-            keysIterationPlan = planFactory.annSort(keysIterationPlan, orderings.get(0));
-        }
+        // Because the orderer has a specific queue view
+        if (orderer != null)
+            keysIterationPlan = planFactory.sort(keysIterationPlan, orderer);
 
         assert keysIterationPlan != planFactory.everything; // This would mean we have no WHERE nor ANN clauses at all
         return keysIterationPlan;
@@ -395,10 +401,9 @@ public class QueryController implements Plan.Executor
         assert !expressions.isEmpty() : "expressions should not be empty for " + op + " in " + command.rowFilter().root();
 
         // VSTODO move ANN out of expressions and into its own abstraction? That will help get generic ORDER BY support
-        Collection<Expression> exp = expressions.stream().filter(e -> e.operation != Expression.Op.ANN && e.operation != Expression.Op.SORT_ASC).collect(Collectors.toList());
-        boolean defer = builder.type == Operation.OperationType.OR || RangeIntersectionIterator.shouldDefer(exp.size());
+        boolean defer = builder.type == Operation.OperationType.OR || RangeIntersectionIterator.shouldDefer(expressions.size());
 
-        Set<Map.Entry<Expression, NavigableSet<SSTableIndex>>> view = referenceAndGetView(op, exp).entrySet();
+        Set<Map.Entry<Expression, NavigableSet<SSTableIndex>>> view = referenceAndGetView(op, expressions).entrySet();
         try
         {
             var viewIterator = view.iterator();
@@ -444,11 +449,11 @@ public class QueryController implements Plan.Executor
 
     // This is an ANN only query
     @Override
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RowFilter.Expression expression)
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows()
     {
         // TODO how do we reconcile new design with the argument for this method?
         var memtableResults = queryContext.view.memtableIndexes.stream()
-                                                               .map(index -> index.orderBy(queryContext, queryContext.view.expression, mergeRange, limit))
+                                                               .map(index -> index.orderBy(queryContext, orderer, mergeRange, limit))
                                                                .collect(Collectors.toList());
         try
         {
@@ -464,10 +469,10 @@ public class QueryController implements Plan.Executor
     }
 
     // This is a hybrid query. We apply all other predicates before ordering and limiting.
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RangeIterator source, RowFilter.Expression expression)
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RangeIterator source)
     {
         List<CloseableIterator<? extends PrimaryKeyWithSortKey>> scoredPrimaryKeyIterators = new ArrayList<>();
-        try (var iter = new OrderingFilterRangeIterator<>(source, ORDER_CHUNK_SIZE, queryContext, list -> this.getTopKRows(list, expression)))
+        try (var iter = new OrderingFilterRangeIterator<>(source, ORDER_CHUNK_SIZE, queryContext, this::getTopKRows))
         {
             while (iter.hasNext())
                 scoredPrimaryKeyIterators.addAll(iter.next());
@@ -475,11 +480,11 @@ public class QueryController implements Plan.Executor
         return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators);
     }
 
-    private List<CloseableIterator<? extends PrimaryKeyWithSortKey>> getTopKRows(List<PrimaryKey> sourceKeys, RowFilter.Expression expression)
+    private List<CloseableIterator<? extends PrimaryKeyWithSortKey>> getTopKRows(List<PrimaryKey> sourceKeys)
     {
         Tracing.logAndTrace(logger, "SAI predicates produced {} keys", sourceKeys.size());
         var memtableResults = queryContext.view.memtableIndexes.stream()
-                                                               .map(index -> index.orderResultsBy(queryContext, sourceKeys, queryContext.view.expression, limit))
+                                                               .map(index -> index.orderResultsBy(queryContext, sourceKeys, orderer, limit))
                                                                .collect(Collectors.toList());
         try
         {
@@ -508,15 +513,15 @@ public class QueryController implements Plan.Executor
         {
             try
             {
-                var iterators = sourceKeys.isEmpty() ? index.orderBy(queryView.expression, mergeRange, queryContext, limit)
-                                                     : index.orderResultsBy(queryContext, sourceKeys, queryView.expression, limit);
+                var iterators = sourceKeys.isEmpty() ? index.orderBy(orderer, mergeRange, queryContext, limit)
+                                                     : index.orderResultsBy(queryContext, sourceKeys, orderer, limit);
                 results.addAll(iterators);
             }
             catch (Throwable ex)
             {
                 // Close any iterators that were successfully opened before the exception
                 FileUtils.closeQuietly(results);
-                if (logger.isDebugEnabled() && !(ex instanceof AbortedOperationException) && queryView.expression != null)
+                if (logger.isDebugEnabled() && !(ex instanceof AbortedOperationException))
                 {
                     var msg = String.format("Failed search on index %s, aborting query.", index.getSSTable());
                     logger.debug(index.getIndexContext().logMessage(msg), ex);
@@ -530,6 +535,11 @@ public class QueryController implements Plan.Executor
     public IndexFeatureSet indexFeatureSet()
     {
         return indexFeatureSet;
+    }
+
+    public Orderer getOrderer()
+    {
+        return orderer;
     }
 
     /**

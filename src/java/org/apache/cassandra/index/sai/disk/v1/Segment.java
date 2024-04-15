@@ -36,6 +36,7 @@ import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
@@ -155,15 +156,15 @@ public class Segment implements Closeable
     /**
      * Order the on-disk index synchronously and produce an iterator in score order
      *
-     * @param expression to filter on disk index
+     * @param orderer    to filter on disk index
      * @param keyRange   key range specific in read command, used by ANN index
      * @param context    to track per sstable cache and per query metrics
      * @param limit      the num of rows to returned, used by ANN index
      * @return an iterator of {@link PrimaryKeyWithSortKey} in score order
      */
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext context, int limit) throws IOException
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Orderer orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context, int limit) throws IOException
     {
-        return index.orderBy(expression, keyRange, context, limit);
+        return index.orderBy(orderer, keyRange, context, limit);
     }
 
     public IndexSearcher getIndexSearcher()
@@ -186,9 +187,9 @@ public class Segment implements Closeable
         return Objects.hashCode(metadata);
     }
 
-    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
+    public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit) throws IOException
     {
-        return index.orderResultsBy(sstableContext.sstable, context, keys, exp, limit);
+        return index.orderResultsBy(sstableContext.sstable, context, keys, orderer, limit);
     }
 
     @Override

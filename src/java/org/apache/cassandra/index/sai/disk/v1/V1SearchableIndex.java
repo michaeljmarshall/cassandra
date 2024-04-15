@@ -35,6 +35,7 @@ import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.SearchableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.RangeConcatIterator;
@@ -182,17 +183,17 @@ public class V1SearchableIndex implements SearchableIndex
     }
 
     @Override
-    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderBy(Expression expression,
-                                                                     AbstractBounds<PartitionPosition> keyRange,
-                                                                     QueryContext context,
-                                                                     int limit) throws IOException
+    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderBy(Orderer orderer,
+                                                                            AbstractBounds<PartitionPosition> keyRange,
+                                                                            QueryContext context,
+                                                                            int limit) throws IOException
     {
         var iterators = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(segments.size());
         for (Segment segment : segments)
         {
             if (segment.intersects(keyRange))
             {
-                iterators.add(segment.orderBy(expression, keyRange, context, limit));
+                iterators.add(segment.orderBy(orderer, keyRange, context, limit));
             }
         }
 
@@ -200,12 +201,12 @@ public class V1SearchableIndex implements SearchableIndex
     }
 
     @Override
-    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Expression exp, int limit) throws IOException
+    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit) throws IOException
     {
         var results = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(segments.size());
         // todo move segmentation logic on keys here?
         for (Segment segment : segments)
-            results.add(segment.orderResultsBy(context, keys, exp, limit));
+            results.add(segment.orderResultsBy(context, keys, orderer, limit));
 
         return results;
     }

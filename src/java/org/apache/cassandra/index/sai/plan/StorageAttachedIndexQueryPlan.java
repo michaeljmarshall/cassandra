@@ -52,8 +52,8 @@ public class StorageAttachedIndexQueryPlan implements Index.QueryPlan
      */
     private final RowFilter postIndexFilter;
     private final Set<Index> indexes;
-    private final boolean isTopK;
     private final IndexFeatureSet indexFeatureSet;
+    private final Orderer orderer;
 
     private StorageAttachedIndexQueryPlan(ColumnFamilyStore cfs,
                                           TableQueryMetrics queryMetrics,
@@ -66,7 +66,7 @@ public class StorageAttachedIndexQueryPlan implements Index.QueryPlan
         this.postIndexFilter = filter.restrict(RowFilter.Expression::isUserDefined);
         this.indexes = indexes;
         this.indexFeatureSet = indexFeatureSet;
-        this.isTopK = filter.root().expressions().stream().anyMatch(p -> p.operator() == Operator.ANN || p.operator() == Operator.SORT_ASC || p.operator() == Operator.SORT_DESC);
+        this.orderer = Orderer.from(cfs.getIndexManager(), filter);
     }
 
     @Nullable
@@ -131,6 +131,7 @@ public class StorageAttachedIndexQueryPlan implements Index.QueryPlan
         return new StorageAttachedIndexSearcher(cfs,
                                                 queryMetrics,
                                                 command,
+                                                orderer,
                                                 indexFeatureSet,
                                                 DatabaseDescriptor.getRangeRpcTimeout(TimeUnit.MILLISECONDS));
     }
@@ -166,6 +167,6 @@ public class StorageAttachedIndexQueryPlan implements Index.QueryPlan
     @Override
     public boolean isTopK()
     {
-        return isTopK;
+        return orderer != null;
     }
 }

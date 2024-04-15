@@ -49,14 +49,14 @@ public class QueryViewBuilder
     private static final Logger logger = LoggerFactory.getLogger(QueryViewBuilder.class);
 
     private final ColumnFamilyStore cfs;
-    private final Expression expression;
+    private final Orderer orderer;
     private final AbstractBounds<PartitionPosition> range;
     private final QueryContext queryContext;
 
-    QueryViewBuilder(ColumnFamilyStore cfs, Expression expression, AbstractBounds<PartitionPosition> range, QueryContext queryContext)
+    QueryViewBuilder(ColumnFamilyStore cfs, Orderer orderer, AbstractBounds<PartitionPosition> range, QueryContext queryContext)
     {
         this.cfs = cfs;
-        this.expression = expression;
+        this.orderer = orderer;
         this.range = range;
         this.queryContext = queryContext;
     }
@@ -66,17 +66,17 @@ public class QueryViewBuilder
         final ColumnFamilyStore.RefViewFragment view;
         final Set<SSTableIndex> referencedIndexes;
         final Set<MemtableIndex> memtableIndexes;
-        final Expression expression;
+        final Orderer orderer;
 
         public QueryView(ColumnFamilyStore.RefViewFragment view,
                          Set<SSTableIndex> referencedIndexes,
                          Set<MemtableIndex> memtableIndexes,
-                         Expression expression)
+                         Orderer orderer)
         {
             this.view = view;
             this.referencedIndexes = referencedIndexes;
             this.memtableIndexes = memtableIndexes;
-            this.expression = expression;
+            this.orderer = orderer;
         }
 
         @Override
@@ -107,7 +107,7 @@ public class QueryViewBuilder
 
                 // Acquire live memtable index and memtable references first to avoid missing an sstable due to flush.
                 // Copy the memtable indexes to avoid concurrent modification.
-                var memtableIndexes = new HashSet<>(expression.context.getLiveMemtables().values());
+                var memtableIndexes = new HashSet<>(orderer.context.getLiveMemtables().values());
 
                 // TODO live sstables or canonical?
                 var refViewFragment = cfs.selectAndReference(org.apache.cassandra.db.lifecycle.View.selectLive(range));
@@ -124,7 +124,7 @@ public class QueryViewBuilder
                     }
                 }
 
-                Set<SSTableIndex> indexes = getIndexesForExpression(expression);
+                Set<SSTableIndex> indexes = getIndexesForExpression(orderer);
                 // Attempt to reference each of the indexes, and thn confirm that the sstable associated with the index
                 // is in the refViewFragment. If it isn't in the refViewFragment, we will get incorrect results, so
                 // we release the indexes and refViewFragment and try again.
@@ -158,7 +158,7 @@ public class QueryViewBuilder
                         continue outer;
                     }
                 }
-                return new QueryView(refViewFragment, referencedIndexes, memtableIndexes, expression);
+                return new QueryView(refViewFragment, referencedIndexes, memtableIndexes, orderer);
             }
         }
         finally
@@ -178,13 +178,13 @@ public class QueryViewBuilder
     /**
      * Get the index
      */
-    private Set<SSTableIndex> getIndexesForExpression(Expression expression)
+    private Set<SSTableIndex> getIndexesForExpression(Orderer orderer)
     {
-        if (!expression.context.isIndexed())
+        if (!orderer.context.isIndexed())
             throw new IllegalArgumentException("Expression is not indexed");
 
         // Get all the indexes in the range.
-        return expression.context.getView().getIndexes().stream().filter(this::indexInRange).collect(Collectors.toSet());
+        return orderer.context.getView().getIndexes().stream().filter(this::indexInRange).collect(Collectors.toSet());
     }
 
     // I've removed the concept of "most selective index" since we don't actually have per-sstable

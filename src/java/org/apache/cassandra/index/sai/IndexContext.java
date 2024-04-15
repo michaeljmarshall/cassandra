@@ -71,6 +71,7 @@ import org.apache.cassandra.index.sai.memory.MemtableRangeIterator;
 import org.apache.cassandra.index.sai.metrics.ColumnQueryMetrics;
 import org.apache.cassandra.index.sai.metrics.IndexMetrics;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeAntiJoinIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
@@ -439,7 +440,7 @@ public class IndexContext
         return builder.build();
     }
 
-    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderMemtable(QueryContext context, Expression e, AbstractBounds<PartitionPosition> keyRange, int limit)
+    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderMemtable(QueryContext context, Orderer orderer, AbstractBounds<PartitionPosition> keyRange, int limit)
     {
         Collection<MemtableIndex> memtables = liveMemtables.values();
 
@@ -449,7 +450,7 @@ public class IndexContext
         var result = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(memtables.size());
 
         for (MemtableIndex index : memtables)
-            result.add(index.orderBy(context, e, keyRange, limit));
+            result.add(index.orderBy(context, orderer, keyRange, limit));
 
         return result;
     }
@@ -473,7 +474,7 @@ public class IndexContext
     }
 
     // Search all memtables for all PrimaryKeys in list.
-    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderResultsBy(QueryContext context, List<PrimaryKey> source, Expression e, int limit)
+    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderResultsBy(QueryContext context, List<PrimaryKey> source, Orderer orderer, int limit)
     {
         Collection<MemtableIndex> memtables = liveMemtables.values();
 
@@ -482,7 +483,7 @@ public class IndexContext
 
         List<CloseableIterator<? extends PrimaryKeyWithSortKey>> result = new ArrayList<>(memtables.size());
         for (MemtableIndex index : memtables)
-            result.add(index.orderResultsBy(context, source, e, limit));
+            result.add(index.orderResultsBy(context, source, orderer, limit));
 
         return result;
     }
