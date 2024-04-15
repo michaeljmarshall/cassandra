@@ -446,24 +446,18 @@ public class QueryController implements Plan.Executor
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RowFilter.Expression expression)
     {
-        var planExpression = new Expression(getContext(expression))
-                             .add(expression.operator(), expression.getIndexValue().duplicate());
-
-        // search memtable before referencing sstable indexes; otherwise we may miss newly flushed memtable index
-        var memtableResults = getContext(expression).orderMemtable(queryContext, planExpression, mergeRange, limit);
-
-        var queryView = new QueryViewBuilder(Collections.singleton(planExpression), mergeRange).build();
-
+        // TODO how do we reconcile new design with the argument for this method?
+        var memtableResults = queryContext.view.memtableIndexes.stream()
+                                                               .map(index -> index.orderBy(queryContext, queryContext.view.expression, mergeRange, limit))
+                                                               .collect(Collectors.toList());
         try
         {
-            var sstableResults = orderSstables(queryView, Collections.emptyList());
+            var sstableResults = orderSstables(queryContext.view, Collections.emptyList());
             sstableResults.addAll(memtableResults);
-            return new MergePrimaryWithSortKeyIterator(sstableResults, queryView.referencedIndexes);
+            return new MergePrimaryWithSortKeyIterator(sstableResults);
         }
         catch (Throwable t)
         {
-            // all sstable indexes in view have been referenced, need to clean up when exception is thrown
-            queryView.referencedIndexes.forEach(SSTableIndex::release);
             FileUtils.closeQuietly(memtableResults);
             throw t;
         }
@@ -473,53 +467,28 @@ public class QueryController implements Plan.Executor
     public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RangeIterator source, RowFilter.Expression expression)
     {
         List<CloseableIterator<? extends PrimaryKeyWithSortKey>> scoredPrimaryKeyIterators = new ArrayList<>();
-        List<SSTableIndex> indexesToRelease = new ArrayList<>();
         try (var iter = new OrderingFilterRangeIterator<>(source, ORDER_CHUNK_SIZE, queryContext, list -> this.getTopKRows(list, expression)))
         {
             while (iter.hasNext())
-            {
-                var next = iter.next();
-                scoredPrimaryKeyIterators.addAll(next.iterators);
-                indexesToRelease.addAll(next.referencedIndexes);
-            }
+                scoredPrimaryKeyIterators.addAll(iter.next());
         }
-        return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators, indexesToRelease);
+        return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators);
     }
 
-    private IteratorsAndIndexes getTopKRows(List<PrimaryKey> sourceKeys, RowFilter.Expression expression)
+    private List<CloseableIterator<? extends PrimaryKeyWithSortKey>> getTopKRows(List<PrimaryKey> sourceKeys, RowFilter.Expression expression)
     {
         Tracing.logAndTrace(logger, "SAI predicates produced {} keys", sourceKeys.size());
-
-        // Filter out PKs now. Each PK is passed to every segment of the ANN index, so filtering shadowed keys
-        // eagerly can save some work when going from PK to row id for on disk segments.
-        // Since the result is shared with multiple streams, we use an unmodifiable list.
-        var planExpression = new Expression(this.getContext(expression));
-        // todo what goes here
-        planExpression.add(expression.operator(), expression.operator() == Operator.ANN ? expression.getIndexValue().duplicate() : null);
-
-        // search memtable before referencing sstable indexes; otherwise we may miss newly flushed memtable index
-        var memtableResults = this.getContext(expression)
-                                  .orderResultsBy(queryContext, sourceKeys, planExpression, limit);
-        var queryView = new QueryViewBuilder(Collections.singleton(planExpression), mergeRange).build();
-
+        var memtableResults = queryContext.view.memtableIndexes.stream()
+                                                               .map(index -> index.orderResultsBy(queryContext, sourceKeys, queryContext.view.expression, limit))
+                                                               .collect(Collectors.toList());
         try
         {
-            var sstableScoredPrimaryKeyIterators = orderSstables(queryView, sourceKeys);
+            var sstableScoredPrimaryKeyIterators = orderSstables(queryContext.view, sourceKeys);
             sstableScoredPrimaryKeyIterators.addAll(memtableResults);
-            if (sstableScoredPrimaryKeyIterators.isEmpty())
-            {
-                // We release here because an empty vector index will produce 0 iterators
-                // but still needs to be released.
-                // VSTODO Maybe we can remove empty indexes from the view.
-                queryView.referencedIndexes.forEach(SSTableIndex::release);
-                return new IteratorsAndIndexes(Collections.emptyList(), Collections.emptySet());
-            }
-            return new IteratorsAndIndexes(sstableScoredPrimaryKeyIterators, queryView.referencedIndexes);
+            return sstableScoredPrimaryKeyIterators;
         }
         catch (Throwable t)
         {
-            // all sstable indexes in view have been referenced, need to clean up when exception is thrown
-            queryView.referencedIndexes.forEach(SSTableIndex::release);
             FileUtils.closeQuietly(memtableResults);
             throw t;
         }
@@ -535,25 +504,22 @@ public class QueryController implements Plan.Executor
     private List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderSstables(QueryViewBuilder.QueryView queryView, List<PrimaryKey> sourceKeys)
     {
         List<CloseableIterator<? extends PrimaryKeyWithSortKey>> results = new ArrayList<>();
-        for (var e : queryView.view.values())
+        for (var index : queryView.referencedIndexes)
         {
-            QueryViewBuilder.IndexExpression annIndexExpression = null;
             try
             {
-                assert e.size() == 1 : "only one index is expected in ANN expression, found " + e.size() + " in " + e;
-                annIndexExpression = e.get(0);
-                var iterators = sourceKeys.isEmpty() ? annIndexExpression.index.orderBy(annIndexExpression.expression, mergeRange, queryContext, limit)
-                                                     : annIndexExpression.index.orderResultsBy(queryContext, sourceKeys, annIndexExpression.expression, limit);
+                var iterators = sourceKeys.isEmpty() ? index.orderBy(queryView.expression, mergeRange, queryContext, limit)
+                                                     : index.orderResultsBy(queryContext, sourceKeys, queryView.expression, limit);
                 results.addAll(iterators);
             }
             catch (Throwable ex)
             {
                 // Close any iterators that were successfully opened before the exception
                 FileUtils.closeQuietly(results);
-                if (logger.isDebugEnabled() && !(ex instanceof AbortedOperationException) && annIndexExpression != null)
+                if (logger.isDebugEnabled() && !(ex instanceof AbortedOperationException) && queryView.expression != null)
                 {
-                    var msg = String.format("Failed search on index %s, aborting query.", annIndexExpression.index.getSSTable());
-                    logger.debug(annIndexExpression.index.getIndexContext().logMessage(msg), ex);
+                    var msg = String.format("Failed search on index %s, aborting query.", index.getSSTable());
+                    logger.debug(index.getIndexContext().logMessage(msg), ex);
                 }
                 throw Throwables.cleaned(ex);
             }
@@ -819,17 +785,5 @@ public class QueryController implements Plan.Executor
         }
 
         return rows;
-    }
-
-    private static class IteratorsAndIndexes
-    {
-        final List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators;
-        final Set<SSTableIndex> referencedIndexes;
-
-        IteratorsAndIndexes(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators, Set<SSTableIndex> indexes)
-        {
-            this.iterators = iterators;
-            this.referencedIndexes = indexes;
-        }
     }
 }

@@ -65,15 +65,24 @@ public class TrieMemtableIndex implements MemtableIndex
     private final LongAdder estimatedOnHeapMemoryUsed = new LongAdder();
     private final LongAdder estimatedOffHeapMemoryUsed = new LongAdder();
 
+    private final Memtable memtable;
+
     public TrieMemtableIndex(IndexContext indexContext, Memtable memtable)
     {
         this.boundaries = indexContext.owner().localRangeSplits(TrieMemtable.SHARD_COUNT);
         this.rangeIndexes = new MemoryIndex[boundaries.shardCount()];
         this.validator = indexContext.getValidator();
+        this.memtable = memtable;
         for (int shard = 0; shard < boundaries.shardCount(); shard++)
         {
             this.rangeIndexes[shard] = new TrieMemoryIndex(indexContext, memtable);
         }
+    }
+
+    @Override
+    public Memtable getMemtable()
+    {
+        return memtable;
     }
 
     @VisibleForTesting
@@ -194,7 +203,7 @@ public class TrieMemtableIndex implements MemtableIndex
         // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
         // way to get this working based on the current API.
 //        return MergeIterator.get(pq, Comparator.naturalOrder());
-        return new MergePrimaryWithSortKeyIterator(pq, List.of());
+        return new MergePrimaryWithSortKeyIterator(pq);
     }
 
     @Override
@@ -214,7 +223,7 @@ public class TrieMemtableIndex implements MemtableIndex
 
         // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
         // way to get this working based on the current API.
-        return new MergePrimaryWithSortKeyIterator(pq, List.of());
+        return new MergePrimaryWithSortKeyIterator(pq);
     }
 
     /**

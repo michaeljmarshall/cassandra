@@ -42,7 +42,6 @@ import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.filter.RowFilter;
-import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.AbstractUnfilteredRowIterator;
@@ -122,19 +121,20 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
     {
         if (command.isTopK())
         {
+            FilterTree filterTree = analyzeFilter();
+            var ordering = filterTree.expressions.values().stream().filter(e -> e.operation == Expression.Op.ANN || e.operation == Expression.Op.SORT_ASC).collect(Collectors.toList());
+            assert ordering.size() == 1 : "TopK queries must have exactly one ordering expression " + ordering;
             // TopK queries require a consistent view of the sstables and memtables in order to validate overwritten
             // rows. Acquire the view before building any of the iterators.
-            // TODO is live correct or should we use canonical?
-            try (var view = cfs.selectAndReference(View.selectLive(controller.mergeRange())))
+            try (var queryView = new QueryViewBuilder(cfs, ordering.get(0), controller.mergeRange(), queryContext).build())
             {
-                FilterTree filterTree = analyzeFilter();
-                // todo do should we limit which indexes get in based on the view?
-                // I'm pretty sure we want to, especially for memtables to ensure we don't miss things.
+                // TODO this is a bit of a hack, but we need to get the view from the queryView. Find better way to
+                // thread this through.
+                queryContext.view = queryView;
                 Iterator<? extends PrimaryKey> keysIterator = controller.buildIterator();
                 assert !(keysIterator instanceof RangeIterator);
-                queryContext.view = view;
                 var scoredKeysIterator = (CloseableIterator<PrimaryKeyWithSortKey>) keysIterator;
-                var result = new ScoreOrderedResultRetriever(view, scoredKeysIterator, filterTree, controller,
+                var result = new ScoreOrderedResultRetriever(queryView.view, scoredKeysIterator, filterTree, controller,
                                                              executionController, queryContext);
                 return (UnfilteredPartitionIterator) new TopKProcessor(command).filter(result);
             }

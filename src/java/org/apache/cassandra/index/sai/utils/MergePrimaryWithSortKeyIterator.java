@@ -40,10 +40,8 @@ public class MergePrimaryWithSortKeyIterator extends AbstractIterator<PrimaryKey
 {
     private final PriorityQueue<PeekingIterator<? extends PrimaryKeyWithSortKey>> pq;
     private final List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iteratorsToBeClosed;
-    private final Collection<SSTableIndex> indexesToBeClosed;
 
-    public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators,
-                                           Collection<SSTableIndex> referencedIndexes)
+    public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators)
     {
         int size = !iterators.isEmpty() ? iterators.size() : 1;
         this.pq = new PriorityQueue<>(size, Comparator.comparing(PeekingIterator::peek));
@@ -51,7 +49,6 @@ public class MergePrimaryWithSortKeyIterator extends AbstractIterator<PrimaryKey
             if (iterator.hasNext())
                 pq.add(Iterators.peekingIterator(iterator));
         iteratorsToBeClosed = iterators;
-        indexesToBeClosed = referencedIndexes;
     }
 
     @Override
@@ -74,9 +71,6 @@ public class MergePrimaryWithSortKeyIterator extends AbstractIterator<PrimaryKey
     @Override
     public void close()
     {
-        for (CloseableIterator<? extends PrimaryKeyWithSortKey> iterator : iteratorsToBeClosed)
-            FileUtils.closeQuietly(iterator);
-        for (SSTableIndex index : indexesToBeClosed)
-            index.release();
+        FileUtils.closeQuietly(iteratorsToBeClosed);
     }
 }

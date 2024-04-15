@@ -40,6 +40,8 @@ import org.apache.cassandra.utils.concurrent.OpOrder;
 
 public interface MemtableIndex extends MemtableOrdering
 {
+    Memtable getMemtable();
+
     long writeCount();
 
     long estimatedOnHeapMemoryUsed();
