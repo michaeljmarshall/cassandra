@@ -782,7 +782,7 @@ public class QueryController implements Plan.Executor
         long rows = 0;
 
         for (Memtable memtable : cfs.getAllMemtables())
-            rows += memtable.rowCount();
+            rows += estimateMemtableRowCount(memtable);
 
         List<Range<Token>> tokenRanges = ranges.stream()
                                                .map(r -> new Range<>(r.startKey().getToken(), r.stopKey().getToken()))
@@ -795,5 +795,11 @@ public class QueryController implements Plan.Executor
         }
 
         return rows;
+    }
+
+    private static long estimateMemtableRowCount(Memtable memtable)
+    {
+        long rowSize = memtable.getEstimatedAverageRowSize();
+        return rowSize > 0 ? memtable.getLiveDataSize() / rowSize : 0;
     }
 }
