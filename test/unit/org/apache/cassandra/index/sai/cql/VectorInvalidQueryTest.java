@@ -112,7 +112,7 @@ public class VectorInvalidQueryTest extends SAITester
         createIndex("CREATE CUSTOM INDEX ON %s(val2) USING 'StorageAttachedIndex'");
         waitForIndexQueryable();
 
-        assertInvalidMessage("Cannot specify more than one ANN ordering",
+        assertInvalidMessage("Cannot specify more than one ordering column when using SAI indexes",
                              "SELECT * FROM %s ORDER BY val1 ann of [2.5, 3.5, 4.5], val2 ann of [2.1, 3.2, 4.0] LIMIT 2");
     }
 
@@ -134,7 +134,7 @@ public class VectorInvalidQueryTest extends SAITester
         createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
         waitForIndexQueryable();
 
-        assertInvalidMessage("ANN ordering does not support secondary ordering",
+        assertInvalidMessage("Cannot combine clustering column ordering with non-clustered ordering when using SAI indexes",
                              "SELECT * FROM %s ORDER BY val ann of [2.5, 3.5, 4.5], ck ASC LIMIT 2");
     }
 

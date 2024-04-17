@@ -653,11 +653,11 @@ public class StatementRestrictions
             List<Ordering> indexOrderings = orderings.stream().filter(o -> o.expression.hasNonClusteredOrdering()).collect(Collectors.toList());
 
             if (indexOrderings.size() > 1)
-                throw new InvalidRequestException("Cannot specify more than one ANN ordering");
+                throw new InvalidRequestException("Cannot specify more than one ordering column when using SAI indexes");
             else if (indexOrderings.size() == 1)
             {
                 if (orderings.size() > 1)
-                    throw new InvalidRequestException("Index based ordering does not support secondary ordering");
+                    throw new InvalidRequestException("Cannot combine clustering column ordering with non-clustered ordering when using SAI indexes");
                 Ordering ordering = indexOrderings.get(0);
                 if (ordering.direction != Ordering.Direction.ASC && ordering.expression instanceof Ordering.Ann)
                     throw new InvalidRequestException("Descending ANN ordering is not supported");
@@ -775,7 +775,7 @@ public class StatementRestrictions
 
     public boolean hasAnnRestriction()
     {
-        return nonPrimaryKeyRestrictions.restrictions().stream().anyMatch(SingleRestriction::isAnn);
+        return nonPrimaryKeyRestrictions.restrictions().stream().anyMatch(SingleRestriction::isIndexBasedOrdering);
     }
 
     public void throwRequiresAllowFilteringError(TableMetadata table)
