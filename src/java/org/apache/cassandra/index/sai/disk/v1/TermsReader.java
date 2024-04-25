@@ -36,6 +36,7 @@ import org.apache.cassandra.index.sai.disk.io.IndexInput;
 import org.apache.cassandra.index.sai.disk.v1.postings.MergePostingList;
 import org.apache.cassandra.index.sai.disk.v1.postings.PostingsReader;
 import org.apache.cassandra.index.sai.disk.v1.postings.ScanningPostingsReader;
+import org.apache.cassandra.index.sai.disk.v1.trie.ReverseTrieTermsDictionaryReader;
 import org.apache.cassandra.index.sai.disk.v1.trie.TrieTermsDictionaryReader;
 import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
@@ -118,8 +119,13 @@ public class TermsReader implements Closeable
 
     public TermsIterator allTerms(long segmentOffset)
     {
+        return allTerms(segmentOffset, true);
+    }
+
+    public TermsIterator allTerms(long segmentOffset, boolean ascending)
+    {
         // blocking, since we use it only for segment merging for now
-        return new TermsScanner(segmentOffset);
+        return ascending ? new TermsScanner(segmentOffset) : new ReverseTermsScanner(segmentOffset);
     }
 
     public PostingList exactMatch(ByteComparable term, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
@@ -301,7 +307,6 @@ public class TermsReader implements Closeable
         }
     }
 
-    // currently only used for testing
     private class TermsScanner implements TermsIterator
     {
         private final long segmentOffset;
@@ -322,6 +327,7 @@ public class TermsReader implements Closeable
         public PostingList postings() throws IOException
         {
             assert entry != null;
+            // TODO should we keep this open longer than a single list?
             final IndexInput input = IndexFileUtils.instance.openInput(postingsFile);
             return new OffsetPostingList(segmentOffset, new ScanningPostingsReader(input, new PostingsReader.BlocksSummary(input, entry.right)));
         }
@@ -359,6 +365,64 @@ public class TermsReader implements Closeable
         public boolean hasNext()
         {
             return termsDictionaryReader.hasNext();
+        }
+    }
+
+    private class ReverseTermsScanner implements TermsIterator
+    {
+        private final long segmentOffset;
+        private final ReverseTrieTermsDictionaryReader iterator;
+        private Pair<ByteComparable, Long> entry;
+
+        private ReverseTermsScanner(long segmentOffset)
+        {
+            this.iterator = new ReverseTrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot);
+            this.segmentOffset = segmentOffset;
+        }
+
+        @Override
+        @SuppressWarnings("resource")
+        public PostingList postings() throws IOException
+        {
+            assert entry != null;
+            // TODO should we keep this open longer than a single list?
+            final IndexInput input = IndexFileUtils.instance.openInput(postingsFile);
+            return new OffsetPostingList(segmentOffset, new ScanningPostingsReader(input, new PostingsReader.BlocksSummary(input, entry.right)));
+        }
+
+        @Override
+        public void close()
+        {
+            iterator.close();
+        }
+
+        @Override
+        public ByteBuffer getMinTerm()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ByteBuffer getMaxTerm()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ByteComparable next()
+        {
+            if (iterator.hasNext())
+            {
+                entry = iterator.next();
+                return entry.left;
+            }
+            return null;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return iterator.hasNext();
         }
     }
 
