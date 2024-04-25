@@ -38,6 +38,9 @@ import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.github.jbellis.jvector.vector.VectorizationProvider;
+import io.github.jbellis.jvector.vector.types.VectorFloat;
+import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
 import org.apache.cassandra.concurrent.ImmediateExecutor;
 import org.apache.cassandra.concurrent.LocalAwareExecutorService;
 import org.apache.cassandra.concurrent.SharedExecutorPool;
@@ -90,10 +93,12 @@ public class TopKProcessor
 {
     protected static final Logger logger = LoggerFactory.getLogger(TopKProcessor.class);
     private static final LocalAwareExecutorService PARALLEL_EXECUTOR = getExecutor();
+    private static final VectorTypeSupport vts = VectorizationProvider.getInstance().getVectorTypeSupport();
+
     private final ReadCommand command;
     private final IndexContext indexContext;
     private final RowFilter.Expression expression;
-    private final float[] queryVector;
+    private final VectorFloat<?> queryVector;
 
     private final int limit;
 
@@ -107,7 +112,7 @@ public class TopKProcessor
         this.indexContext = annIndexAndExpression.left;
         this.expression = annIndexAndExpression.right;
         if (expression.operator() == Operator.ANN)
-            this.queryVector =  TypeUtil.decomposeVector(indexContext, expression.getIndexValue().duplicate());
+            this.queryVector =   vts.createFloatVector(annIndexAndExpression.right);
         else
             this.queryVector = null;
         this.limit = command.limits().count();
@@ -368,7 +373,7 @@ public class TopKProcessor
         ByteBuffer value = indexContext.getValueOf(key, row, FBUtilities.nowInSeconds());
         if (value != null)
         {
-            float[] vector = TypeUtil.decomposeVector(indexContext, value);
+            var vector = vts.createFloatVector(TypeUtil.decomposeVector(indexContext, value));
             return indexContext.getIndexWriterConfig().getSimilarityFunction().compare(vector, queryVector);
         }
         return 0;

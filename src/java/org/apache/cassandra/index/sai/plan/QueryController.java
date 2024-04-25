@@ -472,12 +472,26 @@ public class QueryController implements Plan.Executor
     public CloseableIterator<? extends PrimaryKeyWithSortKey> getTopKRows(RangeIterator source)
     {
         List<CloseableIterator<? extends PrimaryKeyWithSortKey>> scoredPrimaryKeyIterators = new ArrayList<>();
-        try (var iter = new OrderingFilterRangeIterator<>(source, ORDER_CHUNK_SIZE, queryContext, this::getTopKRows))
+        OrderingFilterRangeIterator<List<CloseableIterator<? extends PrimaryKeyWithSortKey>>> iter = null;
+        try
         {
+            // We cannot close the source iterator eagerly because it produces partially loaded PrimaryKeys
+            // that might not be needed until a deeper search into the ordering index, which happens after
+            // we exit this block.
+            iter = new OrderingFilterRangeIterator<>(source, ORDER_CHUNK_SIZE, queryContext, list -> this.getTopKRows(list));
             while (iter.hasNext())
-                scoredPrimaryKeyIterators.addAll(iter.next());
+            {
+                var next = iter.next();
+                scoredPrimaryKeyIterators.addAll(next);
+            }
+            return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators, iter);
         }
-        return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators);
+        catch (Throwable t)
+        {
+            FileUtils.closeQuietly(iter);
+            FileUtils.closeQuietly(scoredPrimaryKeyIterators);
+            throw t;
+        }
     }
 
     private List<CloseableIterator<? extends PrimaryKeyWithSortKey>> getTopKRows(List<PrimaryKey> sourceKeys)

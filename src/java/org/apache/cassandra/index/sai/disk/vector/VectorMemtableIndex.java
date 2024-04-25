@@ -41,6 +41,9 @@ import org.slf4j.LoggerFactory;
 import io.github.jbellis.jvector.graph.SearchResult;
 import io.github.jbellis.jvector.util.Bits;
 import org.apache.cassandra.cql3.Operator;
+import io.github.jbellis.jvector.vector.VectorizationProvider;
+import io.github.jbellis.jvector.vector.types.VectorFloat;
+import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
@@ -73,7 +76,9 @@ import static java.lang.Math.pow;
 
 public class VectorMemtableIndex implements MemtableIndex
 {
-    private final Logger logger = LoggerFactory.getLogger(VectorMemtableIndex.class);
+    private static final Logger logger = LoggerFactory.getLogger(VectorMemtableIndex.class);
+    private static final VectorTypeSupport vts = VectorizationProvider.getInstance().getVectorTypeSupport();
+    public static int GLOBAL_BRUTE_FORCE_ROWS = Integer.MAX_VALUE; // not final so test can inject its own setting
 
     private final IndexContext indexContext;
     private final CassandraOnHeapGraph<PrimaryKey> graph;
@@ -175,7 +180,7 @@ public class VectorMemtableIndex implements MemtableIndex
     {
         if (expr.getOp() != Expression.Op.BOUNDED_ANN)
             throw new IllegalArgumentException(indexContext.logMessage("Only BOUNDED_ANN is supported, received: " + expr));
-        float[] qv = expr.lower.value.vector;
+        var qv = vts.createFloatVector(expr.lower.value.vector);
         float threshold = expr.getEuclideanSearchThreshold();
 
         PriorityQueue<PrimaryKey> keyQueue = new PriorityQueue<>();
@@ -195,11 +200,13 @@ public class VectorMemtableIndex implements MemtableIndex
     {
         assert orderer.operator == Operator.ANN : "Only ANN is supported for vector search, received " + orderer.operator;
 
-        return searchInternal(context, orderer.vector, keyRange, limit, 0);
+        var qv = vts.createFloatVector(orderer.vector);
+
+        return searchInternal(context, qv, keyRange, limit, 0);
     }
 
     private CloseableIterator<PrimaryKeyWithScore> searchInternal(QueryContext context,
-                                                                  float[] queryVector,
+                                                                  VectorFloat<?> queryVector,
                                                                   AbstractBounds<PartitionPosition> keyRange,
                                                                   int limit,
                                                                   float threshold)
@@ -256,7 +263,7 @@ public class VectorMemtableIndex implements MemtableIndex
             return CloseableIterator.emptyIterator();
 
         assert orderer.operator == Operator.ANN : "Only ANN is supported for vector search, received " + orderer.operator;
-        float[] qv = orderer.vector;
+        var qv = vts.createFloatVector(orderer.vector);
         List<PrimaryKey> keysInRange = keys.stream()
                                            .dropWhile(k -> k.compareTo(minimumKey) < 0)
                                            .takeWhile(k -> k.compareTo(maximumKey) <= 0)
@@ -288,7 +295,7 @@ public class VectorMemtableIndex implements MemtableIndex
      * @param keys the keys to filter
      * @return an iterator over the keys that pass the filter in PK order
      */
-    private CloseableIterator<PrimaryKeyWithScore> filterByBruteForce(float[] queryVector, float threshold, NavigableSet<PrimaryKey> keys)
+    private CloseableIterator<PrimaryKeyWithScore> filterByBruteForce(VectorFloat<?> queryVector, float threshold, NavigableSet<PrimaryKey> keys)
     {
         // Keys are already ordered in ascending PK order, so just use an ArrayList to collect the results.
         var results = new ArrayList<PrimaryKeyWithScore>(keys.size());
@@ -296,7 +303,7 @@ public class VectorMemtableIndex implements MemtableIndex
         return CloseableIterator.wrap(results.iterator());
     }
 
-    private CloseableIterator<PrimaryKeyWithScore> orderByBruteForce(float[] queryVector, Collection<PrimaryKey> keys)
+    private CloseableIterator<PrimaryKeyWithScore> orderByBruteForce(VectorFloat<?> queryVector, Collection<PrimaryKey> keys)
     {
         // Use a priority queue because we often don't need to consume the entire iterator
         var scoredPrimaryKeys = new PriorityQueue<PrimaryKeyWithScore>(keys.size());
@@ -304,7 +311,7 @@ public class VectorMemtableIndex implements MemtableIndex
         return new PriorityQueueIterator<>(scoredPrimaryKeys);
     }
 
-    private void scoreKeysAndAddToCollector(float[] queryVector,
+    private void scoreKeysAndAddToCollector(VectorFloat<?> queryVector,
                                             Collection<PrimaryKey> keys,
                                             float threshold,
                                             Collection<PrimaryKeyWithScore> collector)
@@ -312,7 +319,7 @@ public class VectorMemtableIndex implements MemtableIndex
         var similarityFunction = indexContext.getIndexWriterConfig().getSimilarityFunction();
         for (var key : keys)
         {
-            float[] vector = graph.vectorForKey(key);
+            var vector = graph.vectorForKey(key);
             if (vector == null)
                 continue;
             var score = similarityFunction.compare(queryVector, vector);
@@ -330,7 +337,7 @@ public class VectorMemtableIndex implements MemtableIndex
         // larger dimension should increase this, because comparisons are more expensive
         // lower chunk cache hit ratio should decrease this, because loading rows is more expensive
         double memoryToDiskFactor = 0.25;
-        return (int) max(limit, memoryToDiskFactor * expectedComparisons);
+        return (int) min(max(limit, memoryToDiskFactor * expectedComparisons), GLOBAL_BRUTE_FORCE_ROWS);
     }
 
     /**
@@ -442,12 +449,6 @@ public class VectorMemtableIndex implements MemtableIndex
             var keys = graph.keysFromOrdinal(ordinal);
             return keys.stream().anyMatch(k -> keyRange.contains(k.partitionKey()));
         }
-
-        @Override
-        public int length()
-        {
-            return graph.size();
-        }
     }
 
     private class ReorderingRangeIterator extends RangeIterator
@@ -501,12 +502,6 @@ public class VectorMemtableIndex implements MemtableIndex
                 if (results.contains(pk))
                     return true;
             return false;
-        }
-
-        @Override
-        public int length()
-        {
-            return results.size();
         }
     }
 
