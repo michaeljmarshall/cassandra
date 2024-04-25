@@ -36,9 +36,12 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
 {
     static final int NOT_AT_LIMIT = Integer.MIN_VALUE;
     private final ByteSource limit;
+    private final TransitionBytesCollector collector;
     private IterationPosition stack;
     private long next;
+    private static final long NOT_PREPARED = -2;
     private boolean reportingPrefixes;
+    private boolean popOnAdvance = false;
 
     static class IterationPosition
     {
@@ -59,9 +62,20 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
 
     protected ReverseValueIterator(Rebufferer source, long root)
     {
+        this(source, root, false);
+    }
+
+    protected ReverseValueIterator(Rebufferer source, long root, boolean collecting)
+    {
         super(source, root);
         limit = null;
+        collector = collecting ? new TransitionBytesCollector() : null;
         initializeNoRightBound(root, NOT_AT_LIMIT, false);
+    }
+
+    protected ReverseValueIterator(Rebufferer source, long root, ByteComparable start, ByteComparable end, boolean admitPrefix)
+    {
+        this(source, root, start, end, admitPrefix, false);
     }
 
     /**
@@ -75,10 +89,11 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
      * </ul>
      * This behaviour is shared with the forward counterpart {@link ValueIterator}.
      */
-    protected ReverseValueIterator(Rebufferer source, long root, ByteComparable start, ByteComparable end, boolean admitPrefix)
+    protected ReverseValueIterator(Rebufferer source, long root, ByteComparable start, ByteComparable end, boolean admitPrefix, boolean collecting)
     {
         super(source, root);
         limit = start != null ? start.asComparableBytes(BYTE_COMPARABLE_VERSION) : null;
+        collector = collecting ? new TransitionBytesCollector() : null;
 
         if (end != null)
             initializeWithRightBound(root, end.asComparableBytes(BYTE_COMPARABLE_VERSION), admitPrefix, limit != null);
@@ -112,6 +127,8 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
                 break;
 
             prev = new IterationPosition(position, childIndex, limitByte, prev);
+            if (collector != null)
+                collector.add(s);
             go(transition(childIndex)); // childIndex is positive, this transition must exist
         }
 
@@ -125,21 +142,39 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
     {
         go(root);
         stack = new IterationPosition(root, -1 - search(256), limitByte, null);
-        next = advanceNode();
+        if (hasPayload())
+            next = root;
+        else
+            next = NOT_PREPARED;
         reportingPrefixes = admitPrefix;
     }
 
-
+    protected ByteComparable collectedKey()
+    {
+        assert collector != null : "Cannot get a collected value from a non-collecting iterator";
+        return collector.toByteComparable();
+    }
 
     /**
      * Returns the position of the next node with payload contained in the iterated span.
      */
     protected long nextPayloadedNode()
     {
-        long toReturn = next;
-        if (next != -1)
+        if (next != NOT_PREPARED)
+        {
+            long toReturn = next;
+            next = NOT_PREPARED;
+            return toReturn;
+        }
+        else
+            return advanceNode();
+    }
+
+    protected boolean hasNext()
+    {
+        if (next == NOT_PREPARED)
             next = advanceNode();
-        return toReturn;
+        return next != NONE;
     }
 
     long advanceNode()
@@ -149,6 +184,12 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
 
         long child;
         int transitionByte;
+
+        if (popOnAdvance)
+        {
+            popOnAdvance = false;
+            collector.pop();
+        }
 
         go(stack.node);
         while (true)
@@ -183,14 +224,21 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
                     // Note that on the exact match of the limit, stackTop.limit would be END_OF_STREAM.
                     // This comparison rejects the exact match; if we wanted to include it, we could test < 0 instead.
                     if (stackTop.limit == NOT_AT_LIMIT)
+                    {
+                        popOnAdvance = collector != null;
                         return stackTop.node;
+                    }
                     else if (reportingPrefixes)
                     {
                         reportingPrefixes = false; // if we are at limit position only report one prefix, the closest
+                        popOnAdvance = collector != null;
                         return stackTop.node;
                     }
                     // else skip this payload
                 }
+
+                if (collector != null)
+                    collector.pop();
 
                 if (stack == null)        // exhausted whole trie
                     return NONE;
@@ -211,6 +259,8 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
                     l = limit.next();
 
                 stack = new IterationPosition(child, transitionRange(), l, stack);
+                if (collector != null)
+                    collector.add(transitionByte);
             }
             else
             {
