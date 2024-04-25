@@ -38,6 +38,7 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
     private final ByteSource limit;
     private IterationPosition stack;
     private long next;
+    private static final long NOT_PREPARED = -2;
     private boolean reportingPrefixes;
 
     static class IterationPosition
@@ -125,7 +126,10 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
     {
         go(root);
         stack = new IterationPosition(root, -1 - search(256), limitByte, null);
-        next = advanceNode();
+        if (hasPayload())
+            next = root;
+        else
+            next = NOT_PREPARED;
         reportingPrefixes = admitPrefix;
     }
 
@@ -136,10 +140,21 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
      */
     protected long nextPayloadedNode()
     {
-        long toReturn = next;
-        if (next != -1)
+        if (next != NOT_PREPARED)
+        {
+            long toReturn = next;
+            next = NOT_PREPARED;
+            return toReturn;
+        }
+        else
+            return advanceNode();
+    }
+
+    protected boolean hasNext()
+    {
+        if (next == NOT_PREPARED)
             next = advanceNode();
-        return toReturn;
+        return next != NONE;
     }
 
     long advanceNode()
