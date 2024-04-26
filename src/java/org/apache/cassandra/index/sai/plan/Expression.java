@@ -247,7 +247,10 @@ public class Expression
             case ANN:
             case SORT_ASC:
             case SORT_DESC:
-                operation = Op.ORDER_BY;
+                // If we alread have an operation on the column, we don't need to set the ORDER_BY op because
+                // it is only used to force validation on a column, and the presence of another operation will do that.
+                if (operation == null)
+                    operation = Op.ORDER_BY;
                 break;
             default:
                 throw new UnsupportedOperationException("Unsupported operator: " + op);

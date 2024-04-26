@@ -51,7 +51,9 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.marshal.BooleanType;
 import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.DecimalType;
 import org.apache.cassandra.db.marshal.InetAddressType;
+import org.apache.cassandra.db.marshal.IntegerType;
 import org.apache.cassandra.db.marshal.SimpleDateType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UUIDType;
@@ -440,21 +442,6 @@ public class IndexContext
         return builder.build();
     }
 
-    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderMemtable(QueryContext context, Orderer orderer, AbstractBounds<PartitionPosition> keyRange, int limit)
-    {
-        Collection<MemtableIndex> memtables = liveMemtables.values();
-
-        if (memtables.isEmpty())
-            return List.of();
-
-        var result = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(memtables.size());
-
-        for (MemtableIndex index : memtables)
-            result.add(index.orderBy(context, orderer, keyRange, limit));
-
-        return result;
-    }
-
     private RangeIterator scanMemtable(AbstractBounds<PartitionPosition> keyRange)
     {
         Collection<Memtable> memtables = liveMemtables.keySet();
@@ -637,9 +624,11 @@ public class IndexContext
         if (op == Operator.SORT_ASC || op == Operator.SORT_DESC)
             return !isCollection()
                    && column.isRegular()
-                   &&  !(column.type instanceof SimpleDateType
-                         || column.type instanceof InetAddressType
-                         || column.type instanceof UUIDType);
+                   &&  !(column.type instanceof SimpleDateType // Currently encodes with the max/min in center of trie
+                         || column.type instanceof InetAddressType // TODO figure out how to support this, it should work
+                         || column.type instanceof DecimalType // Currently truncates to 24 bytes
+                         || column.type instanceof IntegerType // Currently truncates to 20 bytes
+                         || column.type instanceof UUIDType); // TODO figure out how to support this, it probably works
 
         Expression.Op operator = Expression.Op.valueOf(op);
 

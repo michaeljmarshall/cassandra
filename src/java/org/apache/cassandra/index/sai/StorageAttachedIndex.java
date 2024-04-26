@@ -651,9 +651,17 @@ public class StorageAttachedIndex implements Index
     {
         if (restriction instanceof SingleColumnRestriction.OrderRestriction)
         {
-            // todo obviously this needs to be cleaner... but I had issues with sorting and this got the test to pass
             SingleColumnRestriction.OrderRestriction orderRestriction = (SingleColumnRestriction.OrderRestriction) restriction;
-            cqlRows.rows.sort(Comparator.comparing(r -> (Comparable) orderRestriction.getFirstColumn().type.getSerializer().deserialize(r.get(columnIndex))));
+            var type = indexContext.getValidator();
+            // TODO if this is the right way to compare, we should do this step in two passes.
+            Comparator<List<ByteBuffer>> comparator = (List<ByteBuffer> a, List<ByteBuffer> b) -> {
+                var aEncoded = TypeUtil.encode(a.get(columnIndex), type);
+                var bEncoded = TypeUtil.encode(b.get(columnIndex), type);
+                return TypeUtil.compare(aEncoded, bEncoded, type);
+            };
+            if (orderRestriction.getDirection() == Operator.SORT_DESC)
+                comparator = comparator.reversed();
+            cqlRows.rows.sort(comparator);
             return;
         }
 

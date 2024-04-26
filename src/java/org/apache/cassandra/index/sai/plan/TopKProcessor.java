@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sai.plan;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -163,7 +164,16 @@ public class TopKProcessor
         PriorityQueue<Triple<PartitionInfo, Row, Float>> topK = new PriorityQueue<>(limit, Comparator.comparing((Triple<PartitionInfo, Row, Float> t) -> t.getRight()).reversed());
         // to store top-k results in primary key order
         TreeMap<PartitionInfo, TreeSet<Unfiltered>> unfilteredByPartition = new TreeMap<>(Comparator.comparing(p -> p.key));
-        var sorter = new PriorityQueue<Triple<PartitionInfo, Row, ByteBuffer>>(limit, Comparator.comparing(Triple::getRight));
+        // TODO optimize me.
+        Comparator<ByteBuffer> bufferComparator = (a, b) -> {
+            var aEncoded = TypeUtil.encode(a, indexContext.getValidator());
+            var bEncoded = TypeUtil.encode(b, indexContext.getValidator());
+            return TypeUtil.compare(aEncoded, bEncoded, indexContext.getValidator());
+        };
+        Comparator<Triple<PartitionInfo, Row, ByteBuffer>> comparator = Comparator.comparing(Triple::getRight, bufferComparator);
+        if (expression.operator() == Operator.SORT_DESC)
+            comparator = comparator.reversed();
+        var sorter = new PriorityQueue<>(limit, comparator);
 
         if (PARALLEL_EXECUTOR != ImmediateExecutor.INSTANCE && partitions instanceof ParallelCommandProcessor) {
             ParallelCommandProcessor pIter = (ParallelCommandProcessor) partitions;
@@ -399,7 +409,7 @@ public class TopKProcessor
     @Nullable
     private StorageAttachedIndex findVectorIndexFor(SecondaryIndexManager sim, RowFilter.Expression e)
     {
-        if (e.operator() != Operator.ANN && e.operator() != Operator.SORT_ASC)
+        if (e.operator() != Operator.ANN && e.operator() != Operator.SORT_ASC && e.operator() != Operator.SORT_DESC)
             return null;
 
         Optional<Index> index = sim.getBestIndexFor(e);

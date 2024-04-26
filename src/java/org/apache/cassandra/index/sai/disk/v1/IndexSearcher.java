@@ -21,9 +21,11 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.Slice;
@@ -119,7 +121,10 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader, QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit) throws IOException
     {
-        var pq = new PriorityQueue<PrimaryKeyWithSortKey>();
+        Comparator<PrimaryKeyWithSortKey> comparator = orderer.operator == Operator.SORT_ASC
+                                                       ? Comparator.naturalOrder()
+                                                       : Comparator.reverseOrder();
+        var pq = new PriorityQueue<>(comparator);
         for (var key : keys)
         {
             var slices = Slices.with(indexContext.comparator(), Slice.make(key.clustering()));

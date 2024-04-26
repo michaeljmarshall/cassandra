@@ -1014,6 +1014,11 @@ public abstract class SingleColumnRestriction implements SingleRestriction
                 throw new IllegalArgumentException("Ordering restriction must be ASC or DESC");
         }
 
+        public Operator getDirection()
+        {
+            return direction;
+        }
+
         @Override
         public void addFunctionsTo(List<Function> functions)
         {

@@ -279,6 +279,16 @@ public abstract class DataSet<T> extends CQLTester
             return value.add(BigInteger.ONE);
         }
 
+        // varint are truncated in SAI to 20 byte precision. That means
+        // we cannot guarantee ordering based on the current design, so
+        // they are not supported in the first iteration, but could be
+        // with modification.
+        @Override
+        public QuerySet querySet()
+        {
+            return new QuerySet.NumericQuerySet(this, false);
+        }
+
         public String toString()
         {
             return "varint";
@@ -315,6 +325,16 @@ public abstract class DataSet<T> extends CQLTester
         BigDecimal increment(BigDecimal value)
         {
             return value.add(BigDecimal.ONE);
+        }
+
+        // Decimals are truncated in SAI to 24 byte precision. That means
+        // we cannot guarantee ordering based on the current design, so
+        // they are not supported in the first iteration, but could be
+        // with modification.
+        @Override
+        public QuerySet querySet()
+        {
+            return new QuerySet.NumericQuerySet(this, false);
         }
 
         public String toString()

@@ -47,7 +47,6 @@ import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.RowIdWithByteComparable;
 import org.apache.cassandra.index.sai.utils.SAICodecUtils;
 import org.apache.cassandra.index.sai.utils.SegmentOrdering;
-import org.apache.cassandra.io.sstable.format.SSTableReadsListener;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
@@ -59,7 +58,6 @@ import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 public class InvertedIndexSearcher extends IndexSearcher implements SegmentOrdering
 {
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-    private static final SSTableReadsListener NOOP_LISTENER = new SSTableReadsListener() {};
 
     private final TermsReader reader;
     private final ColumnFilter columnFilter;
