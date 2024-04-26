@@ -112,7 +112,7 @@ public class TopKProcessor
         this.indexContext = annIndexAndExpression.left;
         this.expression = annIndexAndExpression.right;
         if (expression.operator() == Operator.ANN)
-            this.queryVector =   vts.createFloatVector(annIndexAndExpression.right);
+            this.queryVector = vts.createFloatVector(TypeUtil.decomposeVector(indexContext, expression.getIndexValue().duplicate()));
         else
             this.queryVector = null;
         this.limit = command.limits().count();
