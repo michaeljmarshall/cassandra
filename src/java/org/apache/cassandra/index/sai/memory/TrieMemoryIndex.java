@@ -25,6 +25,7 @@
 package org.apache.cassandra.index.sai.memory;
 
 import java.nio.ByteBuffer;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -38,12 +39,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.util.concurrent.FastThreadLocal;
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.memtable.TrieMemtable;
+import org.apache.cassandra.db.tries.Direction;
 import org.apache.cassandra.db.tries.MemtableTrie;
 import org.apache.cassandra.db.tries.Trie;
 import org.apache.cassandra.dht.AbstractBounds;
@@ -182,8 +185,8 @@ public class TrieMemoryIndex extends MemoryIndex
     {
         if (data.isEmpty())
             return CloseableIterator.emptyIterator();
-        // TODO only ascending right now...
-        return new AllTermsIterator(data.entrySet().iterator());
+        var iter = data.entrySet(orderer.operator == Operator.SORT_ASC ? Direction.FORWARD : Direction.REVERSE).iterator();
+        return new AllTermsIterator(iter);
     }
 
     @Override
@@ -191,7 +194,10 @@ public class TrieMemoryIndex extends MemoryIndex
     {
         if (data.isEmpty())
             return CloseableIterator.emptyIterator();
-        var pq = new PriorityQueue<PrimaryKeyWithSortKey>();
+        Comparator<PrimaryKeyWithSortKey> comparator = orderer.operator == Operator.SORT_ASC
+                                                       ? Comparator.naturalOrder()
+                                                       : Comparator.reverseOrder();
+        var pq = new PriorityQueue<>(comparator);
         //
         for (PrimaryKey key : keys)
         {

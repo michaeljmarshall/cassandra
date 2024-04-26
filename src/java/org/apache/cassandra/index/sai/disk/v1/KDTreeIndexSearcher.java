@@ -19,14 +19,12 @@ package org.apache.cassandra.index.sai.disk.v1;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
-import java.util.Iterator;
-import java.util.List;
 
 import com.google.common.base.MoreObjects;
-import com.google.common.collect.Iterators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
@@ -40,12 +38,9 @@ import org.apache.cassandra.index.sai.metrics.MulticastQueryEventListeners;
 import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.plan.Orderer;
-import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.RowIdWithByteComparable;
-import org.apache.cassandra.index.sai.utils.RowIdWithMeta;
-import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
@@ -115,8 +110,7 @@ public class KDTreeIndexSearcher extends IndexSearcher
 
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Orderer orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
     {
-        // TODO ascending only right now
-        var iter = new RowIdIterator(bkdReader.iteratorState());
+        var iter = new RowIdIterator(bkdReader.iteratorState(orderer.operator == Operator.SORT_ASC));
         return toMetaSortedIterator(iter, queryContext);
     }
 

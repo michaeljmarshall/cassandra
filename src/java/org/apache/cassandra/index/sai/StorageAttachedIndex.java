@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sai;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -97,6 +98,7 @@ import org.apache.cassandra.index.sai.disk.StorageAttachedIndexWriter;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.v1.IndexWriterConfig;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.index.sai.view.View;
 import org.apache.cassandra.index.transactions.IndexTransaction;
@@ -110,6 +112,8 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
+import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
 import static org.apache.cassandra.config.CassandraRelevantProperties.SAI_VALIDATE_TERMS_AT_COORDINATOR;
 import static org.apache.cassandra.index.sai.disk.v1.IndexWriterConfig.MAX_TOP_K;
@@ -646,6 +650,14 @@ public class StorageAttachedIndex implements Index
         throw new UnsupportedOperationException();
     }
 
+    private ByteComparable encode(ByteBuffer input)
+    {
+        var comparable = TypeUtil.encode(input, indexContext.getValidator());
+
+        return indexContext.isLiteral() ? version -> ByteSource.withTerminator(ByteSource.TERMINATOR, ByteSource.of(comparable, version))
+                                        : version -> TypeUtil.asComparableBytes(comparable, indexContext.getValidator(), version);
+    }
+
     @Override
     public void postQuerySort(ResultSet cqlRows, Restriction restriction, int columnIndex, QueryOptions options)
     {
@@ -653,7 +665,19 @@ public class StorageAttachedIndex implements Index
         {
             // todo obviously this needs to be cleaner... but I had issues with sorting and this got the test to pass
             SingleColumnRestriction.OrderRestriction orderRestriction = (SingleColumnRestriction.OrderRestriction) restriction;
-            cqlRows.rows.sort(Comparator.comparing(r -> (Comparable) orderRestriction.getFirstColumn().type.getSerializer().deserialize(r.get(columnIndex))));
+            var type = indexContext.getValidator();
+//            Comparator<List<ByteBuffer>> comparator = Comparator.comparing(r -> (Comparable) orderRestriction.getFirstColumn().type.getSerializer().deserialize(r.get(columnIndex)));
+            Comparator<List<ByteBuffer>> comparator = (List<ByteBuffer> a, List<ByteBuffer> b) -> {
+                return TypeUtil.compare(a.get(columnIndex), b.get(columnIndex), type);
+            };
+            if (orderRestriction.getDirection() == Operator.SORT_DESC)
+                comparator = comparator.reversed();
+            cqlRows.rows.sort(comparator);
+            // print rows in order
+            for (List<ByteBuffer> row : cqlRows.rows)
+            {
+                System.out.println( " zzz " + orderRestriction.getFirstColumn().type.getSerializer().deserialize(row.get(columnIndex)));
+            }
             return;
         }
 

@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.index.sai.utils;
 
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -26,7 +25,8 @@ import java.util.PriorityQueue;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
 
-import org.apache.cassandra.index.sai.SSTableIndex;
+import org.apache.cassandra.cql3.Operator;
+import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
@@ -42,16 +42,19 @@ public class MergePrimaryWithSortKeyIterator extends AbstractIterator<PrimaryKey
     private final List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iteratorsToBeClosed;
     private final AutoCloseable onClose;
 
-    public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators)
+    public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators, Orderer orderer)
     {
-        this(iterators, () -> {});
+        this(iterators, orderer, () -> {});
     }
 
     public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators,
+                                           Orderer orderer,
                                            AutoCloseable onClose)
     {
         int size = !iterators.isEmpty() ? iterators.size() : 1;
-        this.pq = new PriorityQueue<>(size, Comparator.comparing(PeekingIterator::peek));
+        Comparator<PeekingIterator<? extends PrimaryKeyWithSortKey>> comparator = Comparator.comparing(PeekingIterator::peek);
+        boolean reversed = orderer.operator == Operator.SORT_DESC;
+        this.pq = new PriorityQueue<>(size, reversed ? comparator.reversed() : comparator);
         for (CloseableIterator<? extends PrimaryKeyWithSortKey> iterator : iterators)
             if (iterator.hasNext())
                 pq.add(Iterators.peekingIterator(iterator));

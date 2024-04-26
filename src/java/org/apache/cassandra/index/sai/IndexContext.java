@@ -440,21 +440,6 @@ public class IndexContext
         return builder.build();
     }
 
-    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderMemtable(QueryContext context, Orderer orderer, AbstractBounds<PartitionPosition> keyRange, int limit)
-    {
-        Collection<MemtableIndex> memtables = liveMemtables.values();
-
-        if (memtables.isEmpty())
-            return List.of();
-
-        var result = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(memtables.size());
-
-        for (MemtableIndex index : memtables)
-            result.add(index.orderBy(context, orderer, keyRange, limit));
-
-        return result;
-    }
-
     private RangeIterator scanMemtable(AbstractBounds<PartitionPosition> keyRange)
     {
         Collection<Memtable> memtables = liveMemtables.keySet();

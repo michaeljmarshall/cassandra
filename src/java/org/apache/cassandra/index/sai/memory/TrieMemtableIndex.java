@@ -203,8 +203,7 @@ public class TrieMemtableIndex implements MemtableIndex
 
         // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
         // way to get this working based on the current API.
-//        return MergeIterator.get(pq, Comparator.naturalOrder());
-        return new MergePrimaryWithSortKeyIterator(pq);
+        return new MergePrimaryWithSortKeyIterator(pq, orderer);
     }
 
     @Override
@@ -224,7 +223,7 @@ public class TrieMemtableIndex implements MemtableIndex
 
         // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
         // way to get this working based on the current API.
-        return new MergePrimaryWithSortKeyIterator(pq);
+        return new MergePrimaryWithSortKeyIterator(pq, orderer);
     }
 
     /**

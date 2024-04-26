@@ -734,6 +734,21 @@ public class VectorUpdateDeleteTest extends VectorTester
     }
 
     @Test
+    public void ra() throws Exception
+    {
+        createTable(KEYSPACE, "CREATE TABLE %s (pk int, c bigint, str_val text, vec vector<float, 2>, PRIMARY KEY(pk, c))");
+
+        // add some data
+        execute("INSERT INTO %s (pk, c, str_val, vec) VALUES (1, -100, 'A', [1.0, 1.0])");
+        execute("INSERT INTO %s (pk, c, str_val, vec) VALUES (1, -20, 'A', [1.0, 1.0])");
+
+        // select c and order by c
+        assertRows(execute("SELECT c FROM %s WHERE pk = 1 ORDER BY c"), row(-100L), row(-20L));
+        assertRows(execute("SELECT c FROM %s WHERE pk = 1 ORDER BY c desc"), row(-20L), row(-100L));
+    }
+
+
+    @Test
     public void ensureVariableChunkSizeDoesNotLeadToIncorrectResults() throws Exception
     {
         // When adding the chunk size feature, there were issues related to leaked files.

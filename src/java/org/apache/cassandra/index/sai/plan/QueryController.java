@@ -458,7 +458,7 @@ public class QueryController implements Plan.Executor
         {
             var sstableResults = orderSstables(queryContext.view, Collections.emptyList());
             sstableResults.addAll(memtableResults);
-            return new MergePrimaryWithSortKeyIterator(sstableResults);
+            return new MergePrimaryWithSortKeyIterator(sstableResults, orderer);
         }
         catch (Throwable t)
         {
@@ -483,7 +483,7 @@ public class QueryController implements Plan.Executor
                 var next = iter.next();
                 scoredPrimaryKeyIterators.addAll(next);
             }
-            return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators, iter);
+            return new MergePrimaryWithSortKeyIterator(scoredPrimaryKeyIterators, orderer, iter);
         }
         catch (Throwable t)
         {
