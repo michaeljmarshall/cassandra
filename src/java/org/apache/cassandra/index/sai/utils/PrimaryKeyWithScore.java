@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.index.sai.utils;
 
+import java.nio.ByteBuffer;
+
 import org.apache.cassandra.index.sai.IndexContext;
 
 public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
@@ -28,6 +30,13 @@ public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
     {
         super(context, source, primaryKey);
         this.indexScore = indexScore;
+    }
+
+    @Override
+    protected boolean isValid(ByteBuffer value)
+    {
+        // Vectors handle updated values to a row, so no validation is needed here.
+        return true;
     }
 
     @Override
