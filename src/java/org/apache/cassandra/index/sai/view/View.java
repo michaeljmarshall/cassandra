@@ -77,8 +77,8 @@ public class View implements Iterable<SSTableIndex>
      */
     public Set<SSTableIndex> match(Expression expression)
     {
-        if (expression.getOp() == Expression.Op.ANN)
-            throw new IllegalArgumentException("ANN expression is not supported");
+        if (expression.getOp() == Expression.Op.ORDER_BY)
+            throw new IllegalArgumentException("ORDER BY expression is not supported");
         if (expression.getOp() == Expression.Op.BOUNDED_ANN || expression.getOp().isNonEquality())
             return new HashSet<>(getIndexes());
         return termTree.search(expression);

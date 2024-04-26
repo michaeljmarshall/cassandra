@@ -37,7 +37,6 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.github.jbellis.jvector.vector.VectorUtil;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
@@ -58,7 +57,7 @@ public class Expression
         EQ, MATCH, PREFIX, NOT_EQ, RANGE,
         CONTAINS_KEY, CONTAINS_VALUE,
         NOT_CONTAINS_VALUE, NOT_CONTAINS_KEY,
-        IN, ANN, BOUNDED_ANN, SORT_ASC;
+        IN, ORDER_BY, BOUNDED_ANN;
 
         public static Op valueOf(Operator operator)
         {
@@ -99,7 +98,9 @@ public class Expression
                     return IN;
 
                 case ANN:
-                    return ANN;
+                case SORT_ASC:
+                case SORT_DESC:
+                    return ORDER_BY;
 
                 case BOUNDED_ANN:
                     return BOUNDED_ANN;
@@ -243,6 +244,11 @@ public class Expression
                 searchRadiusMeters = FloatType.instance.compose(upper.value.raw);
                 boundedAnnEuclideanDistanceThreshold = GeoUtil.amplifiedEuclideanSimilarityThreshold(lower.value.vector, searchRadiusMeters);
                 break;
+            case ANN:
+            case SORT_ASC:
+            case SORT_DESC:
+                operation = Op.ORDER_BY;
+                break;
             default:
                 throw new UnsupportedOperationException("Unsupported operator: " + op);
         }
@@ -258,8 +264,8 @@ public class Expression
         if (columnValue == null)
             return false;
 
-        // ANN accepts all results
-        if (operation == Op.ANN)
+        // ORDER_BY is not indepently verifiable, so we always return true
+        if (operation == Op.ORDER_BY)
             return true;
 
         if (!TypeUtil.isValid(columnValue, validator))

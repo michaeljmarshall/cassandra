@@ -201,11 +201,9 @@ public class QueryController implements Plan.Executor
 
     RowFilter.FilterElement filterOperation()
     {
-        // TODO I am pretty sure it is okay to remove orderers here, but it seems semi-risky.
-        // The primary change in semantics is in the FilterTree class where we'll no longer
-        // validate that a column's value is not null. I think that's fine though as long as
-        // we move that logic somewhere else in the stack.
-        return this.command.rowFilter().root().filter(e -> !Orderer.isFilterExpressionOrderer(e));
+        // NOTE: we cannot remove the order by filter expression here yet because it is used in the FilterTree class
+        // to filter out shadowed rows.
+        return this.command.rowFilter().root();
     }
 
     /**
@@ -328,7 +326,8 @@ public class QueryController implements Plan.Executor
 
     private Plan.KeysIteration buildKeysIterationPlan()
     {
-        Plan.KeysIteration keysIterationPlan = Operation.Node.buildTree(filterOperation())
+        var filterElement = filterOperation().filter(e -> !Orderer.isFilterExpressionOrderer(e));
+        Plan.KeysIteration keysIterationPlan = Operation.Node.buildTree(filterElement)
                                                              .analyzeTree(this)
                                                              .plan(this);
 
