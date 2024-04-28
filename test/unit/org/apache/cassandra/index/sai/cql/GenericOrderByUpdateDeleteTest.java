@@ -35,6 +35,54 @@ public class GenericOrderByUpdateDeleteTest extends SAITester
     }
 
     @Test
+    public void endToEndTextOrderingTest() throws Throwable
+    {
+        createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val text)");
+        createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
+        waitForIndexQueryable();
+
+        execute("INSERT INTO %s (pk, str_val) VALUES (0, 'a')");
+        execute("INSERT INTO %s (pk, str_val) VALUES (1, 'z')");
+
+        beforeAndAfterFlush(() -> {
+            assertRowsInBothOrder("SELECT pk FROM %s ORDER BY str_val", 10, row(0), row(1));
+        });
+
+        execute("INSERT INTO %s (pk, str_val) VALUES (2, 'b')");
+        execute("INSERT INTO %s (pk, str_val) VALUES (3, 'A')");
+
+        // Now we get memtable + sstable and then two sstables in the query, which confirms merging index results.
+        beforeAndAfterFlush(() -> {
+            assertRowsInBothOrder("SELECT pk FROM %s ORDER BY str_val", 4,
+                                  row(3), row(0), row(2), row(1));
+        });
+    }
+
+    @Test
+    public void endToEndIntOrderingTest() throws Throwable
+    {
+        createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val int)");
+        createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
+        waitForIndexQueryable();
+
+        execute("INSERT INTO %s (pk, str_val) VALUES (0, -10)");
+        execute("INSERT INTO %s (pk, str_val) VALUES (1, 0)");
+
+        beforeAndAfterFlush(() -> {
+            assertRowsInBothOrder("SELECT pk FROM %s ORDER BY str_val", 10, row(0), row(1));
+        });
+
+        execute("INSERT INTO %s (pk, str_val) VALUES (2, -5)");
+        execute("INSERT INTO %s (pk, str_val) VALUES (3, 100)");
+
+        // Now we get memtable + sstable and then two sstables in the query, which confirms merging index results.
+        beforeAndAfterFlush(() -> {
+            assertRowsInBothOrder("SELECT pk FROM %s ORDER BY str_val", 4,
+                                  row(0), row(2), row(1), row(3));
+        });
+    }
+
+    @Test
     public void testTextOverwrittenRowsInSameMemtableOrSSTable() throws Throwable
     {
         createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val text)");
