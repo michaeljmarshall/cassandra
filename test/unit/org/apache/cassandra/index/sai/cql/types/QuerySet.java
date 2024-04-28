@@ -180,6 +180,15 @@ public abstract class QuerySet extends CQLTester
     public static class LiteralQuerySet extends QuerySet
     {
         private final boolean testOrderby;
+        private final Comparator<Object[]> comparator;
+
+        // For UTF8, the ordering is different from the natural ordering, so we allow a custom comparator
+        LiteralQuerySet(DataSet<?> dataSet, Comparator<Object[]> comparator)
+        {
+            super(dataSet);
+            this.testOrderby = true;
+            this.comparator = comparator;
+        }
 
         LiteralQuerySet(DataSet<?> dataSet)
         {
@@ -190,6 +199,7 @@ public abstract class QuerySet extends CQLTester
         {
             super(dataSet);
             this.testOrderby = testOrderby;
+            this.comparator = Comparator.comparing(o -> (Comparable) o[2]);
         }
 
         @Override
@@ -207,7 +217,7 @@ public abstract class QuerySet extends CQLTester
 
             var copyOfAllRows = Arrays.copyOf(allRows, allRows.length);
             // Sort allRows by value
-            Arrays.sort(copyOfAllRows, Comparator.comparing(o -> (Comparable) o[2]));
+            Arrays.sort(copyOfAllRows, comparator);
             assertRows(tester.execute("SELECT * FROM %s ORDER BY value ASC limit 10"),
                        Arrays.stream(copyOfAllRows).limit(10).toArray(Object[][]::new));
             assertRows(tester.execute("SELECT * FROM %s ORDER BY value ASC limit 100"),
