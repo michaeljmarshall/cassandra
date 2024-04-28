@@ -22,7 +22,6 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.apache.cassandra.index.sai.IndexContext;
-import org.apache.cassandra.utils.FastByteOperations;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
 import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
@@ -40,9 +39,18 @@ public class PrimaryKeyWithByteComparable extends PrimaryKeyWithSortKey
     @Override
     protected boolean isValid(ByteBuffer value)
     {
-        ByteSource byteSource = byteComparable.asComparableBytes(ByteComparable.Version.OSS41);
-        byte[] indexedValue = ByteSourceInverse.readBytes(byteSource);
-        return Arrays.compare(indexedValue, value.array()) == 0;
+        if (context.isLiteral())
+        {
+            ByteSource byteSource = byteComparable.asComparableBytes(ByteComparable.Version.OSS41);
+            byte[] indexedValue = ByteSourceInverse.readBytes(byteSource);
+            return Arrays.compare(indexedValue, value.array()) == 0;
+        }
+        else
+        {
+            var peekableBytes = byteComparable.asPeekableBytes(ByteComparable.Version.OSS41);
+            var bytes = context.getValidator().fromComparableBytes(peekableBytes, ByteComparable.Version.OSS41);
+            return value.compareTo(bytes) == 0;
+        }
     }
 
     @Override

@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
@@ -146,7 +147,12 @@ public class KDTreeIndexSearcher extends IndexSearcher
                 return endOfData();
 
             var segmentRowId = iterator.next();
-            return new RowIdWithByteComparable(segmentRowId, (v) -> ByteSource.of(iterator.scratch, v));
+            // We have to copy scratch to prevent it from being overwritten by the next call to computeNext()
+            var indexValue = new byte[iterator.scratch.length];
+            System.arraycopy(iterator.scratch, 0, indexValue, 0, iterator.scratch.length);
+            // We store the indexValue in an already encoded format, so we use the fixedLength method here
+            // to avoid re-encoding it.
+            return new RowIdWithByteComparable(segmentRowId, (v) -> ByteSource.fixedLength(indexValue));
         }
     }
 }
