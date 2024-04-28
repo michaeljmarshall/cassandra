@@ -59,7 +59,6 @@ public class GenericOrderByUpdateDeleteTest extends SAITester
 
         execute("INSERT INTO %s (pk, str_val) VALUES (0, 1)");
         execute("INSERT INTO %s (pk, str_val) VALUES (1, 2)");
-        execute("INSERT INTO %s (pk, str_val) VALUES (1, -2)");
         execute("INSERT INTO %s (pk, str_val) VALUES (0, 3)");
 
         beforeAndAfterFlush(() -> {

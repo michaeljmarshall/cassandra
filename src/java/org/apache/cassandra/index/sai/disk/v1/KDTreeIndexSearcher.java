@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.PartitionPosition;
-import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
