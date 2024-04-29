@@ -1022,7 +1022,8 @@ public abstract class SingleColumnRestriction implements SingleRestriction
         @Override
         public void addFunctionsTo(List<Function> functions)
         {
-            throw new UnsupportedOperationException();
+            if (otherRestriction != null)
+                otherRestriction.addFunctionsTo(functions);
         }
 
         @Override
@@ -1050,14 +1051,16 @@ public abstract class SingleColumnRestriction implements SingleRestriction
         @Override
         public String toString()
         {
-            return String.format("SORT(%s)", columnDef.name);
+            return String.format("ORDER BY %s %s", columnDef.name, direction);
         }
 
         @Override
         public SingleRestriction doMergeWith(SingleRestriction otherRestriction)
         {
             if (!(otherRestriction instanceof SingleColumnRestriction))
-                throw invalidRequest("%s cannot be restricted by both SORT and %s", columnDef.name, otherRestriction.toString());
+                throw invalidRequest("%s cannot be restricted by both ORDER BY and %s",
+                                     columnDef.name,
+                                     otherRestriction.toString());
             var otherSingleColumnRestriction = (SingleColumnRestriction) otherRestriction;
             if (this.otherRestriction == null)
                 return new OrderRestriction(columnDef, otherSingleColumnRestriction, direction);
@@ -1068,7 +1071,7 @@ public abstract class SingleColumnRestriction implements SingleRestriction
         @Override
         protected boolean isSupportedBy(Index index)
         {
-            return index.supportsExpression(columnDef, Operator.SORT_ASC)
+            return index.supportsExpression(columnDef, direction)
                    && (otherRestriction == null || otherRestriction.isSupportedBy(index));
         }
 

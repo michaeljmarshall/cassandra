@@ -35,6 +35,32 @@ public class GenericOrderByUpdateDeleteTest extends SAITester
     }
 
     @Test
+    public void testPreparedQueries() throws Throwable
+    {
+        createTable("CREATE TABLE %s (pk int PRIMARY KEY, val int)");
+        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
+
+        // Insert some data
+        for (int i = -100; i < 100; i++)
+            execute("INSERT INTO %s (pk, val) VALUES (?, ?)", i, i);
+
+        forcePreparedValues();
+        var query1 = "SELECT pk FROM %s WHERE val > ? ORDER BY val ASC LIMIT 4";
+        var query2 = "SELECT pk FROM %s WHERE val > ? ORDER BY val DESC LIMIT 4";
+        var query3 = "SELECT pk FROM %s ORDER BY val ASC LIMIT 4";
+        var query4 = "SELECT pk FROM %s ORDER BY val DESC LIMIT 4";
+        prepare(query1);
+        prepare(query2);
+        prepare(query3);
+        prepare(query4);
+
+        assertRows(execute(query1, 0), row(1), row(2), row(3), row(4));
+        assertRows(execute(query2, 0), row(99), row(98), row(97), row(96));
+        assertRows(execute(query3), row(-100), row(-99), row(-98), row(-97));
+        assertRows(execute(query4), row(99), row(98), row(97), row(96));
+    }
+
+    @Test
     public void endToEndTextOrderingTest() throws Throwable
     {
         createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val text)");
