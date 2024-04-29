@@ -188,35 +188,4 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
                                                         primaryKeyMapFactory.newPerSSTablePrimaryKeyMap(),
                                                         searcherContext);
     }
-
-    /** Create a sublist of the keys within (inclusive) this segment's bounds */
-    protected List<PrimaryKey> getKeysInRange(List<PrimaryKey> keys)
-    {
-        int minIndex = findBoundaryIndex(keys, true);
-        int maxIndex = findBoundaryIndex(keys, false);
-        return keys.subList(minIndex, maxIndex);
-    }
-
-    private int findBoundaryIndex(List<PrimaryKey> keys, boolean findMin)
-    {
-        // The minKey and maxKey are sometimes just partition keys (not primary keys), so binarySearch
-        // may not return the index of the least/greatest match.
-        var key = findMin ? metadata.minKey : metadata.maxKey;
-        int index = Collections.binarySearch(keys, key);
-        if (index < 0)
-            return -index - 1;
-        if (findMin)
-        {
-            while (index > 0 && keys.get(index - 1).equals(key))
-                index--;
-        }
-        else
-        {
-            while (index < keys.size() - 1 && keys.get(index + 1).equals(key))
-                index++;
-            // We must include the PrimaryKey at the boundary
-            index++;
-        }
-        return index;
-    }
 }

@@ -433,19 +433,18 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
                                                                              Orderer orderer,
                                                                              int limit) throws IOException
     {
-        List<PrimaryKey> keysInRange = getKeysInRange(keys);
-        if (keysInRange.isEmpty())
+        if (keys.isEmpty())
             return CloseableIterator.emptyIterator();
 
         int topK = indexContext.getIndexWriterConfig().getSourceModel().topKFor(limit, graph.getCompressedVectors());
         // Convert PKs to segment row ids and then to ordinals, skipping any that don't exist in this segment
-        var bitsAndRows = flatmapPrimaryKeysToBitsAndRows(keysInRange);
+        var bitsAndRows = flatmapPrimaryKeysToBitsAndRows(keys);
         var bits = bitsAndRows.left;
         var rowIds = bitsAndRows.right;
         var numRows = rowIds.size();
         final CostEstimate cost = estimateCost(topK, numRows);
         Tracing.logAndTrace(logger, "{} rows relevant to current sstable out of {} in range; expected nodes visited is {} for index with {} nodes, LIMIT {}",
-                            numRows, keysInRange.size(), cost.expectedNodesVisited, graph.size(), limit);
+                            numRows, keys.size(), cost.expectedNodesVisited, graph.size(), limit);
         if (numRows == 0)
             return CloseableIterator.emptyIterator();
 
