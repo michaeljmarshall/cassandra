@@ -61,6 +61,24 @@ public class GenericOrderByUpdateDeleteTest extends SAITester
     }
 
     @Test
+    public void testOrderingWhereRowHasComplexColumn() throws Throwable
+    {
+        createTable("CREATE TABLE %s (pk int PRIMARY KEY, val int, m map<text, text>)");
+        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
+
+        execute("INSERT INTO %s (pk, val, m) VALUES (?, ?, ?)", 1, 1, map("a", "b"));
+        execute("INSERT INTO %s (pk, val, m) VALUES (?, ?, ?)", 2, 2, map("a", "b"));
+        flush();
+
+        // Add more data to pk 1 in another sstable. This triggers merging cells in the RowWithSourceTable.
+        execute("INSERT INTO %s (pk, m) VALUES (?, ?)", 1, map("b", "c"));
+
+        beforeAndAfterFlush(() -> {
+            assertRowsInBothOrder("SELECT pk FROM %s ORDER BY val", 2, row(1), row(2));
+        });
+    }
+
+    @Test
     public void endToEndTextOrderingTest() throws Throwable
     {
         createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val text)");

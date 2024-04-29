@@ -353,7 +353,11 @@ public class RowWithSourceTable implements Row
         return Iterators.transform(row.iterator(), c -> {
             if (c == null)
                 return null;
-            return new CellWithSourceTable<>(c.column(), (Cell<?>) c, source);
+            if (c instanceof Cell<?>)
+                return new CellWithSourceTable<>(c.column(), (Cell<?>) c, source);
+            if (c instanceof ComplexColumnData)
+                return ((ComplexColumnData) c).transform(c1 -> new CellWithSourceTable<>(c1.column(), c1, source));
+            throw new IllegalStateException("Unexpected ColumnData type: " + c.getClass().getName());
         });
     }
 }
