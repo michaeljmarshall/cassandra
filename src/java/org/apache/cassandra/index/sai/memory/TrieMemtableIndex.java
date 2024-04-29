@@ -25,12 +25,14 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.concurrent.atomic.LongAdder;
 import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
@@ -45,11 +47,14 @@ import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.MergePrimaryWithSortKeyIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.index.sai.utils.PrimaryKeyWithByteComparable;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeys;
+import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.RangeConcatIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
+import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.Pair;
@@ -61,6 +66,7 @@ public class TrieMemtableIndex implements MemtableIndex
 {
     private final ShardBoundaries boundaries;
     private final MemoryIndex[] rangeIndexes;
+    private final IndexContext indexContext;
     private final AbstractType<?> validator;
     private final LongAdder writeCount = new LongAdder();
     private final LongAdder estimatedOnHeapMemoryUsed = new LongAdder();
@@ -72,6 +78,7 @@ public class TrieMemtableIndex implements MemtableIndex
     {
         this.boundaries = indexContext.owner().localRangeSplits(TrieMemtable.SHARD_COUNT);
         this.rangeIndexes = new MemoryIndex[boundaries.shardCount()];
+        this.indexContext = indexContext;
         this.validator = indexContext.getValidator();
         this.memtable = memtable;
         for (int shard = 0; shard < boundaries.shardCount(); shard++)
@@ -209,21 +216,30 @@ public class TrieMemtableIndex implements MemtableIndex
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit)
     {
-        int startShard = boundaries.getShardForToken(keys.get(0).token());
-        int endShard = boundaries.getShardForToken(keys.get(keys.size() - 1).token());
-
-        var pq = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(endShard - startShard + 1);
-
-        for (int shard  = startShard; shard <= endShard; ++shard)
+        if (keys.isEmpty())
+            return CloseableIterator.emptyIterator();
+        Comparator<PrimaryKeyWithSortKey> comparator = orderer.operator == Operator.SORT_ASC
+                                                       ? Comparator.naturalOrder()
+                                                       : Comparator.reverseOrder();
+        var pq = new PriorityQueue<>(comparator);
+        for (PrimaryKey key : keys)
         {
-            assert rangeIndexes[shard] != null;
-            // todo get subset of keys relevant to this shard
-            pq.add(rangeIndexes[shard].orderResultsBy(context, keys, orderer, limit));
-        }
+            var partition = memtable.getPartition(key.partitionKey());
+            if (partition == null)
+                continue;
+            var row = partition.getRow(key.clustering());
+            if (row == null)
+                continue;
+            var cell = row.getCell(indexContext.getDefinition());
+            if (cell == null)
+                continue;
 
-        // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
-        // way to get this working based on the current API.
-        return new MergePrimaryWithSortKeyIterator(pq, orderer);
+            // We do two kinds of encoding... it'd be great to make this more straight forward, but this is what
+            // we have for now. I leave it to the reader to inspect the two methods to see the nuanced differences.
+            var encoding = TrieMemoryIndex.encode(indexContext, TypeUtil.encode(cell.buffer(), validator));
+            pq.add(new PrimaryKeyWithByteComparable(indexContext, memtable, key, encoding));
+        }
+        return new PriorityQueueIterator<>(pq);
     }
 
     /**

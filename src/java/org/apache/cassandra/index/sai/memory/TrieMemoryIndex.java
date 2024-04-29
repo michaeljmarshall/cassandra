@@ -193,30 +193,8 @@ public class TrieMemoryIndex extends MemoryIndex
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit)
     {
-        if (data.isEmpty())
-            return CloseableIterator.emptyIterator();
-        Comparator<PrimaryKeyWithSortKey> comparator = orderer.operator == Operator.SORT_ASC
-                                                       ? Comparator.naturalOrder()
-                                                       : Comparator.reverseOrder();
-        var pq = new PriorityQueue<>(comparator);
-        for (PrimaryKey key : keys)
-        {
-            var partition = memtable.getPartition(key.partitionKey());
-            if (partition == null)
-                continue;
-            var row = partition.getRow(key.clustering());
-            if (row == null)
-                continue;
-            var cell = row.getCell(indexContext.getDefinition());
-            if (cell == null)
-                continue;
-
-            // We do two kinds of encoding... it'd be great to make this more straight forward, but this is what
-            // we have for now. I leave it to the reader to inspect the two methods to see the nuanced differences.
-            var encoding = TypeUtil.encode(cell.buffer(), indexContext.getValidator());
-            pq.add(new PrimaryKeyWithByteComparable(indexContext, memtable, key, encode(encoding)));
-        }
-        return new PriorityQueueIterator<>(pq);
+        // The current implementation is one level higher in the TrieMemtableIndex.
+        throw new UnsupportedOperationException("Not supported");
     }
 
     @Override
@@ -319,6 +297,11 @@ public class TrieMemoryIndex extends MemoryIndex
 
     private ByteComparable encode(ByteBuffer input)
     {
+        return encode(indexContext, input);
+    }
+
+    static ByteComparable encode(IndexContext indexContext, ByteBuffer input)
+    {
         return indexContext.isLiteral() ? version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR)
                                         : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
     }
@@ -329,7 +312,7 @@ public class TrieMemoryIndex extends MemoryIndex
                                         : term;
     }
 
-    private ByteSource append(ByteSource src, int lastByte)
+    private static ByteSource append(ByteSource src, int lastByte)
     {
         return new ByteSource()
         {
@@ -349,6 +332,7 @@ public class TrieMemoryIndex extends MemoryIndex
             }
         };
     }
+
 
     class PrimaryKeysReducer implements MemtableTrie.UpsertTransformer<PrimaryKeys, PrimaryKey>
     {
