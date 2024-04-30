@@ -607,7 +607,7 @@ public class StatementRestrictions
                             else
                                 throw invalidRequest(StatementRestrictions.VECTOR_INDEXES_UNSUPPORTED_OP_MESSAGE, vc);
                         else
-                            // We check presence of index on vector column earlier, so we only need to for bounded ann
+                            // We check if ANN vector column has index earlier, so we only need to for bounded ann here
                             if (isBoundedANN)
                                 throw invalidRequest(StatementRestrictions.GEO_DISTANCE_REQUIRES_INDEX_MESSAGE);
                     }
