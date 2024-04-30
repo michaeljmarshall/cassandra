@@ -198,7 +198,7 @@ public class VectorMemtableIndex implements MemtableIndex
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(QueryContext context, Orderer orderer, AbstractBounds<PartitionPosition> keyRange, int limit)
     {
-        assert orderer.operator == Operator.ANN : "Only ANN is supported for vector search, received " + orderer.operator;
+        assert orderer.isANN() : "Only ANN is supported for vector search, received " + orderer.operator;
 
         var qv = vts.createFloatVector(orderer.vector);
 
@@ -262,7 +262,7 @@ public class VectorMemtableIndex implements MemtableIndex
             // This case implies maximumKey is empty too.
             return CloseableIterator.emptyIterator();
 
-        assert orderer.operator == Operator.ANN : "Only ANN is supported for vector search, received " + orderer.operator;
+        assert orderer.isANN() : "Only ANN is supported for vector search, received " + orderer;
         var qv = vts.createFloatVector(orderer.vector);
         List<PrimaryKey> keysInRange = keys.stream()
                                            .dropWhile(k -> k.compareTo(minimumKey) < 0)

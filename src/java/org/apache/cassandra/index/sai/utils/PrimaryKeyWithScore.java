@@ -21,7 +21,12 @@ package org.apache.cassandra.index.sai.utils;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 
+/**
+ * A {@link PrimaryKey} that includes a score from a source index.
+ * Note: this class has a natural ordering that is inconsistent with equals.
+ */
 public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
 {
     private final float indexScore;
@@ -46,7 +51,6 @@ public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
         if (!(o instanceof PrimaryKeyWithScore))
             throw new IllegalArgumentException("Cannot compare PrimaryKeyWithScore with " + o.getClass().getSimpleName());
 
-        // Sort by score in descending order
-        return Float.compare(((PrimaryKeyWithScore) o).indexScore, indexScore);
+        return Float.compare(indexScore, ((PrimaryKeyWithScore) o).indexScore);
     }
 }

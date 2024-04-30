@@ -74,7 +74,7 @@ public class Ordering
         @Override
         public SingleRestriction toRestriction()
         {
-            return new SingleColumnRestriction.OrderRestriction(column, direction == Direction.DESC ? Operator.SORT_DESC : Operator.SORT_ASC);
+            return new SingleColumnRestriction.OrderRestriction(column, direction == Direction.DESC ? Operator.ORDER_BY_DESC : Operator.ORDER_BY_ASC);
         }
 
         @Override

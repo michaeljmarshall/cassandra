@@ -659,7 +659,7 @@ public class StorageAttachedIndex implements Index
                 var bEncoded = TypeUtil.encode(b.get(columnIndex), type);
                 return TypeUtil.compare(aEncoded, bEncoded, type);
             };
-            if (orderRestriction.getDirection() == Operator.SORT_DESC)
+            if (orderRestriction.getDirection() == Operator.ORDER_BY_DESC)
                 comparator = comparator.reversed();
             cqlRows.rows.sort(comparator);
             return;

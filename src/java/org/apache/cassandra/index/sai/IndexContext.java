@@ -621,7 +621,7 @@ public class IndexContext
             return false;
 
         // Only regular columns can be sorted by SAI (at least for now)
-        if (op == Operator.SORT_ASC || op == Operator.SORT_DESC)
+        if (op == Operator.ORDER_BY_ASC || op == Operator.ORDER_BY_DESC)
             return !isCollection()
                    && column.isRegular()
                    &&  !(column.type instanceof SimpleDateType // Currently encodes with the max/min in center of trie

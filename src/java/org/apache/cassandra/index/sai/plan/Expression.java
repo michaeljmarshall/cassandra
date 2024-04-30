@@ -98,8 +98,8 @@ public class Expression
                     return IN;
 
                 case ANN:
-                case SORT_ASC:
-                case SORT_DESC:
+                case ORDER_BY_ASC:
+                case ORDER_BY_DESC:
                     return ORDER_BY;
 
                 case BOUNDED_ANN:
@@ -245,8 +245,8 @@ public class Expression
                 boundedAnnEuclideanDistanceThreshold = GeoUtil.amplifiedEuclideanSimilarityThreshold(lower.value.vector, searchRadiusMeters);
                 break;
             case ANN:
-            case SORT_ASC:
-            case SORT_DESC:
+            case ORDER_BY_ASC:
+            case ORDER_BY_DESC:
                 // If we alread have an operation on the column, we don't need to set the ORDER_BY op because
                 // it is only used to force validation on a column, and the presence of another operation will do that.
                 if (operation == null)

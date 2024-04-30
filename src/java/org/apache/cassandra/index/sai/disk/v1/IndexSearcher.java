@@ -24,7 +24,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 
-import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.Slice;
@@ -54,7 +53,6 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableReadsListener;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
-import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
 /**
  * Abstract reader for individual segments of an on-disk index.
@@ -120,7 +118,7 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderResultsBy(SSTableReader reader, QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit) throws IOException
     {
-        Comparator<PrimaryKeyWithSortKey> comparator = orderer.operator == Operator.SORT_ASC
+        Comparator<PrimaryKeyWithSortKey> comparator = orderer.isAscending()
                                                        ? Comparator.naturalOrder()
                                                        : Comparator.reverseOrder();
         var pq = new PriorityQueue<>(comparator);

@@ -1010,7 +1010,7 @@ public abstract class SingleColumnRestriction implements SingleRestriction
             this.otherRestriction = otherRestriction;
             this.direction = direction;
 
-            if (direction != Operator.SORT_ASC && direction != Operator.SORT_DESC)
+            if (direction != Operator.ORDER_BY_ASC && direction != Operator.ORDER_BY_DESC)
                 throw new IllegalArgumentException("Ordering restriction must be ASC or DESC");
         }
 

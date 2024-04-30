@@ -20,7 +20,6 @@ package org.apache.cassandra.index.sai.plan;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -171,7 +170,7 @@ public class TopKProcessor
             return TypeUtil.compare(aEncoded, bEncoded, indexContext.getValidator());
         };
         Comparator<Triple<PartitionInfo, Row, ByteBuffer>> comparator = Comparator.comparing(Triple::getRight, bufferComparator);
-        if (expression.operator() == Operator.SORT_DESC)
+        if (expression.operator() == Operator.ORDER_BY_DESC)
             comparator = comparator.reversed();
         var sorter = new PriorityQueue<>(limit, comparator);
 
@@ -409,7 +408,7 @@ public class TopKProcessor
     @Nullable
     private StorageAttachedIndex findVectorIndexFor(SecondaryIndexManager sim, RowFilter.Expression e)
     {
-        if (e.operator() != Operator.ANN && e.operator() != Operator.SORT_ASC && e.operator() != Operator.SORT_DESC)
+        if (e.operator() != Operator.ANN && e.operator() != Operator.ORDER_BY_ASC && e.operator() != Operator.ORDER_BY_DESC)
             return null;
 
         Optional<Index> index = sim.getBestIndexFor(e);

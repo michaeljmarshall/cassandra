@@ -26,7 +26,6 @@ import com.google.common.base.MoreObjects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.filter.ColumnFilter;
@@ -124,8 +123,7 @@ public class InvertedIndexSearcher extends IndexSearcher implements SegmentOrder
     @Override
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Orderer orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
     {
-        var ascending = orderer.operator == Operator.SORT_ASC;
-        var iter = new RowIdWithTermsIterator(reader.allTerms(0, ascending));
+        var iter = new RowIdWithTermsIterator(reader.allTerms(0, orderer.isAscending()));
         return toMetaSortedIterator(iter, queryContext);
     }
 

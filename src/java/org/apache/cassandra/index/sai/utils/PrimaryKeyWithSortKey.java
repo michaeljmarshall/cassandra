@@ -29,12 +29,10 @@ import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
 /**
- * A PrimaryKey with one piece of metadata. The metadata is not used to determine equality or hash code because the
- * same PrimaryKey could have different scores depending on the source sstable/index.
+ * A PrimaryKey with one piece of metadata. The metadata is not used to determine equality or hash code, but it is used
+ * to compare the PrimaryKey objects.
+ * Note: this class has a natural ordering that is inconsistent with equals.
  */
-// TODO I had this originally, but the Plan class required primary key. Which is better?
-// My main design concern is mixing the way that PrimaryKeys are compared and making the code base a bit confusing.
-//public abstract class PrimaryKeyWithSortKey implements Comparable<PrimaryKeyWithSortKey>
 public abstract class PrimaryKeyWithSortKey implements PrimaryKey
 {
     protected final IndexContext context;

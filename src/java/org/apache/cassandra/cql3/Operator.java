@@ -428,7 +428,7 @@ public enum Operator
         }
     },
     // TODO find a way to break this out, but for now, we're doing this to get the poc running
-    SORT_ASC(102)
+    ORDER_BY_ASC(102)
     {
         @Override
         public String toString()
@@ -442,7 +442,7 @@ public enum Operator
             throw new UnsupportedOperationException();
         }
     },
-    SORT_DESC(103)
+    ORDER_BY_DESC(103)
     {
         @Override
         public String toString()

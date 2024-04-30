@@ -24,7 +24,6 @@ import com.google.common.base.MoreObjects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
@@ -110,7 +109,7 @@ public class KDTreeIndexSearcher extends IndexSearcher
 
     public CloseableIterator<? extends PrimaryKeyWithSortKey> orderBy(Orderer orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
     {
-        var iter = new RowIdIterator(bkdReader.iteratorState(orderer.operator == Operator.SORT_ASC));
+        var iter = new RowIdIterator(bkdReader.iteratorState(orderer.isAscending()));
         return toMetaSortedIterator(iter, queryContext);
     }
 

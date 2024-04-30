@@ -326,6 +326,7 @@ public class QueryController implements Plan.Executor
 
     private Plan.KeysIteration buildKeysIterationPlan()
     {
+        // Remove the ORDER BY filter expression from the filter tree, as it is added below.
         var filterElement = filterOperation().filter(e -> !Orderer.isFilterExpressionOrderer(e));
         Plan.KeysIteration keysIterationPlan = Operation.Node.buildTree(filterElement)
                                                              .analyzeTree(this)

@@ -217,7 +217,7 @@ public class TrieMemtableIndex implements MemtableIndex
     {
         if (keys.isEmpty())
             return CloseableIterator.emptyIterator();
-        Comparator<PrimaryKeyWithSortKey> comparator = orderer.operator == Operator.SORT_ASC
+        Comparator<PrimaryKeyWithSortKey> comparator = orderer.isAscending()
                                                        ? Comparator.naturalOrder()
                                                        : Comparator.reverseOrder();
         var pq = new PriorityQueue<>(comparator);

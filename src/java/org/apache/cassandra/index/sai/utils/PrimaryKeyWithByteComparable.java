@@ -26,6 +26,10 @@ import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
 import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 
+/**
+ * A {@link PrimaryKey} that includes a {@link ByteComparable} value from a source index.
+ * Note: this class has a natural ordering that is inconsistent with equals.
+ */
 public class PrimaryKeyWithByteComparable extends PrimaryKeyWithSortKey
 {
     private final ByteComparable byteComparable;

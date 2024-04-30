@@ -25,8 +25,6 @@
 package org.apache.cassandra.index.sai.memory;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +58,6 @@ import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithByteComparable;
 import org.apache.cassandra.index.sai.utils.PrimaryKeyWithSortKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeys;
-import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.AbstractIterator;
@@ -186,7 +183,7 @@ public class TrieMemoryIndex extends MemoryIndex
     {
         if (data.isEmpty())
             return CloseableIterator.emptyIterator();
-        var iter = data.entrySet(orderer.operator == Operator.SORT_ASC ? Direction.FORWARD : Direction.REVERSE).iterator();
+        var iter = data.entrySet(orderer.isAscending() ? Direction.FORWARD : Direction.REVERSE).iterator();
         return new AllTermsIterator(iter);
     }
 
