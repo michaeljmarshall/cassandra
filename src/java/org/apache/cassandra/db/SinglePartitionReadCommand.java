@@ -584,7 +584,6 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                                       Function<Object, Transformation<BaseRowIterator<?>>> rowTransformer,
                                                       ReadExecutionController executionController)
     {
-        // todo does this change these assertions?
         assert executionController != null && executionController.validForReadOn(cfs);
         if (Tracing.traceSinglePartitions())
             Tracing.trace("Executing single-partition query on {}", cfs.name);

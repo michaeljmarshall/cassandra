@@ -245,7 +245,7 @@ public class V1SearchableIndex implements SearchableIndex
         }
     }
 
-    /** Create a sublist of the keys within (inclusive) this segment's bounds */
+    /** Create a sublist of the keys within (inclusive) the segment's bounds */
     protected List<PrimaryKey> getKeysInRange(List<PrimaryKey> keys, Segment segment)
     {
         int minIndex = findBoundaryIndex(keys, segment, true);
