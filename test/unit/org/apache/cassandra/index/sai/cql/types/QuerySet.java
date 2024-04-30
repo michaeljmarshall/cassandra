@@ -45,6 +45,8 @@ public abstract class QuerySet extends CQLTester
     public static class NumericQuerySet extends QuerySet
     {
         private final boolean testOrderBy;
+        private final Comparator<Object[]> comparator;
+
         NumericQuerySet(DataSet<?> dataset)
         {
             this(dataset, true);
@@ -54,6 +56,7 @@ public abstract class QuerySet extends CQLTester
         {
             super(dataset);
             this.testOrderBy = testOrderBy;
+            this.comparator = Comparator.comparing(o -> (Comparable) o[2]);
         }
 
         @Override
@@ -100,7 +103,7 @@ public abstract class QuerySet extends CQLTester
                 var result = Arrays.copyOfRange(allRows, min + 1, max);
                 if (result.length > 0 && testOrderBy)
                 {
-                    Arrays.sort(result, Comparator.comparing(o -> (Comparable) o[2]));
+                    Arrays.sort(result, comparator);
                     assertRows(tester.execute("SELECT * FROM %s WHERE value > ? AND value < ? ORDER BY value ASC LIMIT ?",
                                               allRows[min][2], allRows[max][2], result.length), result);
                     // reverse it
@@ -129,7 +132,7 @@ public abstract class QuerySet extends CQLTester
 
             // Sort allRows by value
             var copyOfAllRows = Arrays.copyOf(allRows, allRows.length);
-            Arrays.sort(copyOfAllRows, Comparator.comparing(o -> (Comparable) o[2]));
+            Arrays.sort(copyOfAllRows, comparator);
 
             assertRows(tester.execute("SELECT * FROM %s ORDER BY value ASC limit 10"),
                        Arrays.stream(copyOfAllRows).limit(10).toArray(Object[][]::new));
@@ -179,14 +182,14 @@ public abstract class QuerySet extends CQLTester
 
     public static class LiteralQuerySet extends QuerySet
     {
-        private final boolean testOrderby;
+        private final boolean testOrderBy;
         private final Comparator<Object[]> comparator;
 
         // For UTF8, the ordering is different from the natural ordering, so we allow a custom comparator
         LiteralQuerySet(DataSet<?> dataSet, Comparator<Object[]> comparator)
         {
             super(dataSet);
-            this.testOrderby = true;
+            this.testOrderBy = true;
             this.comparator = comparator;
         }
 
@@ -195,10 +198,10 @@ public abstract class QuerySet extends CQLTester
             this(dataSet, true);
         }
 
-        LiteralQuerySet(DataSet<?> dataSet, boolean testOrderby)
+        LiteralQuerySet(DataSet<?> dataSet, boolean testOrderBy)
         {
             super(dataSet);
-            this.testOrderby = testOrderby;
+            this.testOrderBy = testOrderBy;
             this.comparator = Comparator.comparing(o -> (Comparable) o[2]);
         }
 
@@ -212,7 +215,7 @@ public abstract class QuerySet extends CQLTester
             }
 
             // Some literal types do not support ORDER BY yet, so we skip those
-            if (!testOrderby)
+            if (!testOrderBy)
                 return;
 
             var copyOfAllRows = Arrays.copyOf(allRows, allRows.length);

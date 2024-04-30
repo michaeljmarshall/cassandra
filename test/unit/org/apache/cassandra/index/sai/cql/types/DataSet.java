@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.db.marshal.InetAddressType;
 import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.serializers.SimpleDateSerializer;
 import org.apache.cassandra.serializers.TimeSerializer;
@@ -642,7 +643,9 @@ public abstract class DataSet<T> extends CQLTester
         @Override
         public QuerySet querySet()
         {
-            return new QuerySet.LiteralQuerySet(this, false);
+            Comparator<Object[]> comparator = Comparator.comparing(o -> UUIDType.instance.decompose((UUID) o[2]),
+                                                                   UUIDType.instance);
+            return new QuerySet.LiteralQuerySet(this, comparator);
         }
 
         public String toString()

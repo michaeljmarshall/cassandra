@@ -68,7 +68,6 @@ public class Ordering
         @Override
         public boolean hasNonClusteredOrdering()
         {
-            // todo is this sufficient?
             return !column.isClusteringColumn();
         }
 

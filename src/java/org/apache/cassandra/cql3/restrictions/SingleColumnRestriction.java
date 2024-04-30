@@ -1109,7 +1109,6 @@ public abstract class SingleColumnRestriction implements SingleRestriction
         @Override
         public void addFunctionsTo(List<Function> functions)
         {
-            // todo when do we hit this code?
             value.addFunctionsTo(functions);
             if (boundedAnnRestriction != null)
                 boundedAnnRestriction.addFunctionsTo(functions);

@@ -625,10 +625,10 @@ public class IndexContext
             return !isCollection()
                    && column.isRegular()
                    &&  !(column.type instanceof SimpleDateType // Currently encodes with the max/min in center of trie
-                         || column.type instanceof InetAddressType // TODO figure out how to support this, it should work
+                         || column.type instanceof InetAddressType // Possible, but need to add decoding logic based on
+                                                                   // SAI's TypeUtil.encode method.
                          || column.type instanceof DecimalType // Currently truncates to 24 bytes
-                         || column.type instanceof IntegerType // Currently truncates to 20 bytes
-                         || column.type instanceof UUIDType); // TODO figure out how to support this, it probably works
+                         || column.type instanceof IntegerType); // Currently truncates to 20 bytes
 
         Expression.Op operator = Expression.Op.valueOf(op);
 
