@@ -33,6 +33,9 @@ import org.apache.cassandra.cql3.statements.StatementType;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.DecimalType;
+import org.apache.cassandra.db.marshal.IntegerType;
+import org.apache.cassandra.db.marshal.SimpleDateType;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
@@ -75,9 +78,9 @@ public class StatementRestrictions
     "Restriction on partition key column %s must not be nested under OR operator";
 
     public static final String GEO_DISTANCE_REQUIRES_INDEX_MESSAGE = "GEO_DISTANCE requires the vector column to be indexed";
-    public static final String ANN_REQUIRES_INDEX_MESSAGE = "ANN ordering by vector requires the column to be indexed";
-    public static final String ANN_REQUIRES_ALL_RESTRICTED_NON_PARTITION_KEY_COLUMNS_INDEXED_MESSAGE =
-    "ANN ordering by vector requires each restricted column to be indexed except for fully-specified partition keys";
+    public static final String NON_CLUSTER_ORDERING_REQUIRES_INDEX_MESSAGE = "Ordering on non-clustering column %s requires the column to be indexed";
+    public static final String NON_CLUSTER_ORDERING_REQUIRES_ALL_RESTRICTED_NON_PARTITION_KEY_COLUMNS_INDEXED_MESSAGE =
+    "Ordering on non-clustering column requires each restricted column to be indexed except for fully-specified partition keys";
 
     public static final String VECTOR_INDEX_PRESENT_NOT_SUPPORT_GEO_DISTANCE_MESSAGE =
     "Vector index present, but configuration does not support GEO_DISTANCE queries. GEO_DISTANCE requires similarity_function 'euclidean'";
@@ -353,7 +356,7 @@ public class StatementRestrictions
             // and by adding first, we ensure that merging restrictions works as expected.
             // The long term solution will break ordering out into its own abstraction.
             if (nestingLevel == 0)
-                addOrderingRestrictions(orderings, nonPrimaryKeyRestrictionSet);
+                addOrderingRestrictions(orderings, indexRegistry, nonPrimaryKeyRestrictionSet);
 
             /*
              * WHERE clause. For a given entity, rules are:
@@ -604,10 +607,9 @@ public class StatementRestrictions
                             else
                                 throw invalidRequest(StatementRestrictions.VECTOR_INDEXES_UNSUPPORTED_OP_MESSAGE, vc);
                         else
+                            // We check presence of index on vector column earlier, so we only need to for bounded ann
                             if (isBoundedANN)
                                 throw invalidRequest(StatementRestrictions.GEO_DISTANCE_REQUIRES_INDEX_MESSAGE);
-                            else
-                                throw invalidRequest(StatementRestrictions.ANN_REQUIRES_INDEX_MESSAGE);
                     }
 
                     if (!allowFiltering)
@@ -645,9 +647,10 @@ public class StatementRestrictions
          * so they end up in the row filter.
          *
          * @param orderings orderings from the select statement
+         * @param indexRegistry used to check if the ordering is supported by an index
          * @param receiver target restriction builder to receive the additional restrictions
          */
-        private void addOrderingRestrictions(List<Ordering> orderings, RestrictionSet.Builder receiver)
+        private void addOrderingRestrictions(List<Ordering> orderings, IndexRegistry indexRegistry, RestrictionSet.Builder receiver)
         {
             // todo does this accidentally allow for double ordering with and without nonclustered ordering?
             List<Ordering> indexOrderings = orderings.stream().filter(o -> o.expression.hasNonClusteredOrdering()).collect(Collectors.toList());
@@ -662,6 +665,17 @@ public class StatementRestrictions
                 if (ordering.direction != Ordering.Direction.ASC && ordering.expression instanceof Ordering.Ann)
                     throw new InvalidRequestException("Descending ANN ordering is not supported");
                 SingleRestriction restriction = ordering.expression.toRestriction();
+                if (!restriction.hasSupportingIndex(indexRegistry))
+                {
+                    var type = restriction.getFirstColumn().type.asCQL3Type().getType();
+                    // This is a slight hack, but once we support a way to order these types, we can remove it.
+                    if (type instanceof SimpleDateType || type instanceof IntegerType || type instanceof DecimalType)
+                        throw new InvalidRequestException(String.format("SAI based ordering on column %s of type %s is not supported",
+                                                          restriction.getFirstColumn(),
+                                                          restriction.getFirstColumn().type.asCQL3Type()));
+                    throw new InvalidRequestException(String.format(NON_CLUSTER_ORDERING_REQUIRES_INDEX_MESSAGE,
+                                                                    restriction.getFirstColumn()));
+                }
                 receiver.addRestriction(restriction, false);
             }
         }
@@ -773,15 +787,15 @@ public class StatementRestrictions
         return children;
     }
 
-    public boolean hasAnnRestriction()
+    public boolean hasIndxBasedOrdering()
     {
         return nonPrimaryKeyRestrictions.restrictions().stream().anyMatch(SingleRestriction::isIndexBasedOrdering);
     }
 
     public void throwRequiresAllowFilteringError(TableMetadata table)
     {
-        if (hasAnnRestriction())
-            throw invalidRequest(StatementRestrictions.ANN_REQUIRES_ALL_RESTRICTED_NON_PARTITION_KEY_COLUMNS_INDEXED_MESSAGE);
+        if (hasIndxBasedOrdering())
+            throw invalidRequest(StatementRestrictions.NON_CLUSTER_ORDERING_REQUIRES_ALL_RESTRICTED_NON_PARTITION_KEY_COLUMNS_INDEXED_MESSAGE);
         Set<ColumnMetadata> unsupported = getColumnsWithUnsupportedIndexRestrictions(table);
         if (unsupported.isEmpty())
         {
