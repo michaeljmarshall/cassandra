@@ -88,7 +88,7 @@ public class BruteForceRowIdIterator extends AbstractIterator<RowIdWithScore>
                                    int topK)
     {
         this.approximateScoreQueue = approximateScoreQueue;
-        this.exactScoreQueue = new PriorityQueue<>(topK, (o1, o2) -> Float.compare(o2.getScore(), o1.getScore()));
+        this.exactScoreQueue = new PriorityQueue<>(topK, Comparator.reverseOrder());
         this.reranker = reranker;
         assert topK >= limit : "topK must be greater than or equal to limit. Found: " + topK + " < " + limit;
         this.limit = limit;

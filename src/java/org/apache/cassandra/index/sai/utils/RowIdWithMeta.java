@@ -22,12 +22,14 @@ import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.io.sstable.SSTableId;
 
+/**
+ * Represents a row id with additional metadata. The metadata is not a type parameter to prevent unnecessary boxing.
+ */
 abstract public class RowIdWithMeta
 {
-    // TODO isn't a segment row id int? Why is it long everywhere?
-    private final long segmentRowId;
+    private final int segmentRowId;
 
-    public RowIdWithMeta(long segmentRowId)
+    public RowIdWithMeta(int segmentRowId)
     {
         this.segmentRowId = segmentRowId;
     }
@@ -37,11 +39,21 @@ abstract public class RowIdWithMeta
         return segmentRowId;
     }
 
-    public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(IndexContext indexContext, SSTableId<?> sstableId, PrimaryKeyMap primaryKeyMap, long segmentRowIdOffset)
+    public PrimaryKeyWithSortKey buildPrimaryKeyWithSortKey(IndexContext indexContext,
+                                                            SSTableId<?> sstableId,
+                                                            PrimaryKeyMap primaryKeyMap,
+                                                            long segmentRowIdOffset)
     {
         var pk = primaryKeyMap.primaryKeyFromRowId(segmentRowIdOffset + segmentRowId);
         return wrapPrimaryKey(indexContext, sstableId, pk);
     }
 
+    /**
+     * Wrap the provided primary key with the stored metadata.
+     * @param indexContext the index context
+     * @param sstableId the sstable id
+     * @param primaryKey the primary key
+     * @return the wrapped primary key with its associated metadata
+     */
     abstract protected PrimaryKeyWithSortKey wrapPrimaryKey(IndexContext indexContext, SSTableId<?> sstableId, PrimaryKey primaryKey);
 }

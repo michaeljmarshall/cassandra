@@ -19,9 +19,11 @@
 package org.apache.cassandra.index.sai.utils;
 
 import org.apache.cassandra.index.sai.IndexContext;
-import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.io.sstable.SSTableId;
 
+/**
+ * Represents a row id with a score.
+ */
 public class RowIdWithScore extends RowIdWithMeta implements Comparable<RowIdWithScore>
 {
     private final float score;
@@ -32,17 +34,10 @@ public class RowIdWithScore extends RowIdWithMeta implements Comparable<RowIdWit
         this.score = score;
     }
 
-    // TODO keep or make class Comparable?
-    public float getScore()
-    {
-        return score;
-    }
-
     @Override
     public int compareTo(RowIdWithScore o)
     {
-        // Compare descending always for vector
-        return Float.compare(o.score, score);
+        return Float.compare(score, o.score);
     }
 
     @Override

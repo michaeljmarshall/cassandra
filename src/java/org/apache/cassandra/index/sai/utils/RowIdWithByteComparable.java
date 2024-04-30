@@ -26,10 +26,9 @@ public class RowIdWithByteComparable extends RowIdWithMeta
 {
     private final ByteComparable byteComparable;
 
-    public RowIdWithByteComparable(long segmentRowId, ByteComparable byteComparable)
+    public RowIdWithByteComparable(int segmentRowId, ByteComparable byteComparable)
     {
-        // todo don't cast
-        super((int) segmentRowId);
+        super(segmentRowId);
         this.byteComparable = byteComparable;
     }
 

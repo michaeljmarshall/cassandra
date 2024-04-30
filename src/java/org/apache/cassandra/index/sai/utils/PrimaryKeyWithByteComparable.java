@@ -37,7 +37,7 @@ public class PrimaryKeyWithByteComparable extends PrimaryKeyWithSortKey
     }
 
     @Override
-    protected boolean isValid(ByteBuffer value)
+    protected boolean isIndexDataEqualToLiveData(ByteBuffer value)
     {
         if (context.isLiteral())
         {
@@ -59,7 +59,6 @@ public class PrimaryKeyWithByteComparable extends PrimaryKeyWithSortKey
         if (!(o instanceof PrimaryKeyWithByteComparable))
             throw new IllegalArgumentException("Cannot compare PrimaryKeyWithByteComparable with " + o.getClass().getSimpleName());
 
-        // TODO is this the right version?
         return ByteComparable.compare(byteComparable, ((PrimaryKeyWithByteComparable) o).byteComparable, ByteComparable.Version.OSS41);
     }
 }

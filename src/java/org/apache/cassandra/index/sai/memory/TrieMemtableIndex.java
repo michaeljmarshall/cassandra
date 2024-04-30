@@ -207,7 +207,7 @@ public class TrieMemtableIndex implements MemtableIndex
             pq.add(rangeIndexes[shard].orderBy(queryContext, orderer, keyRange, limit));
         }
 
-        // TODO it would probably be better to only have one PQ instead of several, but this is the easiest
+        // VSTODO it would probably be better to only have one PQ instead of several, but this is the easiest
         // way to get this working based on the current API.
         return new MergePrimaryWithSortKeyIterator(pq, orderer);
     }

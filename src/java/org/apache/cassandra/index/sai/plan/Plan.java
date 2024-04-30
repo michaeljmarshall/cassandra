@@ -1350,7 +1350,7 @@ abstract public class Plan
          */
         public KeysIteration sort(KeysIteration source, Orderer ordering)
         {
-            // TODO use different calculations depending on the column type being ordered.
+            // VSTODO use different calculations depending on the column type being ordered.
             return annSort(source, ordering, nextId++);
         }
 

@@ -151,7 +151,7 @@ public class KDTreeIndexSearcher extends IndexSearcher
             System.arraycopy(iterator.scratch, 0, indexValue, 0, iterator.scratch.length);
             // We store the indexValue in an already encoded format, so we use the fixedLength method here
             // to avoid re-encoding it.
-            return new RowIdWithByteComparable(segmentRowId, (v) -> ByteSource.fixedLength(indexValue));
+            return new RowIdWithByteComparable(Math.toIntExact(segmentRowId), (v) -> ByteSource.fixedLength(indexValue));
         }
     }
 }

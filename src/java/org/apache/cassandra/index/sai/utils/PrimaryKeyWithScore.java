@@ -33,9 +33,10 @@ public class PrimaryKeyWithScore extends PrimaryKeyWithSortKey
     }
 
     @Override
-    protected boolean isValid(ByteBuffer value)
+    protected boolean isIndexDataEqualToLiveData(ByteBuffer value)
     {
-        // Vectors handle updated values to a row, so no validation is needed here.
+        // Vector indexes handle updated rows properly and not allow a row to have more than one value in the same
+        // index segment. Therefore, there is no need to validate the index data against the live data.
         return true;
     }
 

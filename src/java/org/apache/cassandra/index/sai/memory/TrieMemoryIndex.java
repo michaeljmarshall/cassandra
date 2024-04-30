@@ -426,8 +426,7 @@ public class TrieMemoryIndex extends MemoryIndex
             {
                 var entry = iterator.next();
                 primaryKeysIterator = entry.getValue().keys().iterator();
-                // We don't decode this because we want the ByteComparable version of the term.
-                // TODO maybe we do want to decode it, I thought we didn't, but tests started passing once we did.
+                // Literal terms are compared differently than the way they are inserted into the trie.
                 byteComparableTerm = decode(entry.getKey());
                 return new PrimaryKeyWithByteComparable(indexContext, memtable, primaryKeysIterator.next(), byteComparableTerm);
             }

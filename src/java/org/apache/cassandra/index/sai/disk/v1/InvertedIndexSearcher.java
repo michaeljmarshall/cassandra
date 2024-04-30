@@ -166,7 +166,7 @@ public class InvertedIndexSearcher extends IndexSearcher implements SegmentOrder
                 {
                     long nextPosting = currentPostingList.nextPosting();
                     if (nextPosting != PostingList.END_OF_STREAM)
-                        return new RowIdWithByteComparable(nextPosting, currentTerm);
+                        return new RowIdWithByteComparable(Math.toIntExact(nextPosting), currentTerm);
 
                     if (!source.hasNext())
                         return endOfData();

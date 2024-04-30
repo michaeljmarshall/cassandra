@@ -56,23 +56,28 @@ public abstract class PrimaryKeyWithSortKey implements PrimaryKey
 
     public boolean isIndexDataValid(Row row, int nowInSecs)
     {
-        // TODO cleanup assertions, these are left over from initial hacking
         assert context.getDefinition().isRegular() : "Only regular columns are supported, got " + context.getDefinition();
         var cell = row.getCell(context.getDefinition());
+        if (!cell.isLive(nowInSecs))
+            return false;
         assert cell instanceof CellWithSourceTable : "Expected CellWithSource, got " + cell.getClass();
-        assert cell.isLive(nowInSecs) : "Expected live cell, got " + cell;
         return sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable())
-               && isValid(cell.buffer());
+               && isIndexDataEqualToLiveData(cell.buffer());
     }
 
-    abstract protected boolean isValid(ByteBuffer value);
+    /**
+     * Compares the index data to the live data to ensure that the index data is still valid. This is only
+     * necessary when an index allows one row to have multiple values associated with it.
+     */
+    abstract protected boolean isIndexDataEqualToLiveData(ByteBuffer value);
 
     @Override
     public final int hashCode()
     {
-        // We do not want the score to affect the hash code because
+        // The sort key must not affect the hash code because
         // the same Primary Key could have different scores depending
-        // on the source sstable/index.
+        // on the source sstable/index, and we store this object
+        // in a HashMap to prevent loading the same row multiple times.
         return primaryKey.hashCode();
     }
 
@@ -82,7 +87,10 @@ public abstract class PrimaryKeyWithSortKey implements PrimaryKey
         if (!(obj instanceof PrimaryKeyWithSortKey))
             return false;
 
-        // todo this ignores the sort key, is that right?
+        // The sort key must not affect the equality because
+        // the same Primary Key could have different scores depending
+        // on the source sstable/index, and we store this object
+        // in a HashMap to prevent loading the same row multiple times.
         return primaryKey.equals(((PrimaryKeyWithSortKey) obj).primaryKey());
     }
 

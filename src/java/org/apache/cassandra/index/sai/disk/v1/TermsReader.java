@@ -313,6 +313,8 @@ public class TermsReader implements Closeable
         private final TrieTermsDictionaryReader termsDictionaryReader;
         private final ByteBuffer minTerm, maxTerm;
         private Pair<ByteComparable, Long> entry;
+        private final IndexInput postingsInput;
+        private final IndexInput postingsSummaryInput;
 
         private TermsScanner(long segmentOffset)
         {
@@ -320,6 +322,8 @@ public class TermsReader implements Closeable
             this.minTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMinTerm().asComparableBytes(ByteComparable.Version.OSS41)));
             this.maxTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMaxTerm().asComparableBytes(ByteComparable.Version.OSS41)));
             this.segmentOffset = segmentOffset;
+            this.postingsInput = IndexFileUtils.instance.openInput(postingsFile);
+            this.postingsSummaryInput = IndexFileUtils.instance.openInput(postingsFile);
         }
 
         @Override
@@ -327,15 +331,16 @@ public class TermsReader implements Closeable
         public PostingList postings() throws IOException
         {
             assert entry != null;
-            // TODO should we keep this open longer than a single list?
-            final IndexInput input = IndexFileUtils.instance.openInput(postingsFile);
-            return new OffsetPostingList(segmentOffset, new ScanningPostingsReader(input, new PostingsReader.BlocksSummary(input, entry.right)));
+            var postingList = new ScanningPostingsReader(postingsInput, new PostingsReader.BlocksSummary(postingsSummaryInput, entry.right));
+            return new OffsetPostingList(segmentOffset, postingList);
         }
 
         @Override
         public void close()
         {
             termsDictionaryReader.close();
+            FileUtils.closeQuietly(postingsInput);
+            FileUtils.closeQuietly(postingsSummaryInput);
         }
 
         @Override
@@ -373,11 +378,15 @@ public class TermsReader implements Closeable
         private final long segmentOffset;
         private final ReverseTrieTermsDictionaryReader iterator;
         private Pair<ByteComparable, Long> entry;
+        private final IndexInput postingsInput;
+        private final IndexInput postingsSummaryInput;
 
         private ReverseTermsScanner(long segmentOffset)
         {
             this.iterator = new ReverseTrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot);
             this.segmentOffset = segmentOffset;
+            this.postingsInput = IndexFileUtils.instance.openInput(postingsFile);
+            this.postingsSummaryInput = IndexFileUtils.instance.openInput(postingsFile);
         }
 
         @Override
@@ -385,15 +394,16 @@ public class TermsReader implements Closeable
         public PostingList postings() throws IOException
         {
             assert entry != null;
-            // TODO should we keep this open longer than a single list?
-            final IndexInput input = IndexFileUtils.instance.openInput(postingsFile);
-            return new OffsetPostingList(segmentOffset, new ScanningPostingsReader(input, new PostingsReader.BlocksSummary(input, entry.right)));
+            var postingList = new ScanningPostingsReader(postingsInput, new PostingsReader.BlocksSummary(postingsSummaryInput, entry.right));
+            return new OffsetPostingList(segmentOffset, postingList);
         }
 
         @Override
         public void close()
         {
             iterator.close();
+            FileUtils.closeQuietly(postingsInput);
+            FileUtils.closeQuietly(postingsSummaryInput);
         }
 
         @Override
