@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -306,7 +307,7 @@ public class VectorMemtableIndex implements MemtableIndex
     private CloseableIterator<PrimaryKeyWithScore> orderByBruteForce(VectorFloat<?> queryVector, Collection<PrimaryKey> keys)
     {
         // Use a priority queue because we often don't need to consume the entire iterator
-        var scoredPrimaryKeys = new PriorityQueue<PrimaryKeyWithScore>(keys.size());
+        var scoredPrimaryKeys = new PriorityQueue<PrimaryKeyWithScore>(keys.size(), Comparator.reverseOrder());
         scoreKeysAndAddToCollector(queryVector, keys, 0, scoredPrimaryKeys);
         return new PriorityQueueIterator<>(scoredPrimaryKeys);
     }

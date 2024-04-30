@@ -22,6 +22,7 @@ import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 
@@ -306,7 +307,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
      */
     private CloseableIterator<RowIdWithScore> orderByBruteForce(VectorFloat<?> queryVector, IntArrayList segmentRowIds) throws IOException
     {
-        var scoredRowIds = new PriorityQueue<RowIdWithScore>(segmentRowIds.size());
+        var scoredRowIds = new PriorityQueue<RowIdWithScore>(segmentRowIds.size(), Comparator.reverseOrder());
         addScoredRowIdsToCollector(queryVector, segmentRowIds, 0, scoredRowIds);
         return new PriorityQueueIterator<>(scoredRowIds);
     }
