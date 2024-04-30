@@ -54,7 +54,6 @@ import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.RangeConcatIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
-import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.Pair;
@@ -236,10 +235,16 @@ public class TrieMemtableIndex implements MemtableIndex
 
             // We do two kinds of encoding... it'd be great to make this more straight forward, but this is what
             // we have for now. I leave it to the reader to inspect the two methods to see the nuanced differences.
-            var encoding = TrieMemoryIndex.encode(indexContext, TypeUtil.encode(cell.buffer(), validator));
+            var encoding = encode(TypeUtil.encode(cell.buffer(), validator));
             pq.add(new PrimaryKeyWithByteComparable(indexContext, memtable, key, encoding));
         }
         return new PriorityQueueIterator<>(pq);
+    }
+
+    private ByteComparable encode(ByteBuffer input)
+    {
+        return indexContext.isLiteral() ? ByteComparable.fixedLength(input)
+                                        : v -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), v);
     }
 
     /**

@@ -297,11 +297,6 @@ public class TrieMemoryIndex extends MemoryIndex
 
     private ByteComparable encode(ByteBuffer input)
     {
-        return encode(indexContext, input);
-    }
-
-    static ByteComparable encode(IndexContext indexContext, ByteBuffer input)
-    {
         return indexContext.isLiteral() ? version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR)
                                         : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
     }

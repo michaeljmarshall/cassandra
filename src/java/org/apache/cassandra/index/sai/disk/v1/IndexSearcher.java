@@ -20,7 +20,6 @@ package org.apache.cassandra.index.sai.disk.v1;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -138,10 +137,8 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
                     var cell = row.getCell(indexContext.getDefinition());
                     if (cell == null)
                         continue;
-                    // TODO do we need to encode??
+                    // We encode the bytes to make sure they compare correctly.
                     var byteComparable = encode(cell.buffer());
-                    // TODO is it okay that we don't have a rowId here? I guess we get to skip it because the index
-                    // reads straight from the sstable.
                     pq.add(new PrimaryKeyWithByteComparable(indexContext, indexDescriptor.descriptor.id, key, byteComparable));
                 }
             }
@@ -151,8 +148,8 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
 
     private ByteComparable encode(ByteBuffer input)
     {
-        return indexContext.isLiteral() ? version -> ByteSource.withTerminator(ByteSource.TERMINATOR, ByteSource.of(input, version))
-                                        : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
+        return indexContext.isLiteral() ? ByteComparable.fixedLength(input)
+                                        : v -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), v);
     }
 
     protected RangeIterator toPrimaryKeyIterator(PostingList postingList, QueryContext queryContext) throws IOException
