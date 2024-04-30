@@ -660,7 +660,7 @@ public class StatementRestrictions
             else if (indexOrderings.size() == 1)
             {
                 if (orderings.size() > 1)
-                    throw new InvalidRequestException("Cannot combine clustering column ordering with non-clustered ordering when using SAI indexes");
+                    throw new InvalidRequestException("Cannot combine clustering column ordering with non-clustering column ordering");
                 Ordering ordering = indexOrderings.get(0);
                 if (ordering.direction != Ordering.Direction.ASC && ordering.expression instanceof Ordering.Ann)
                     throw new InvalidRequestException("Descending ANN ordering is not supported");

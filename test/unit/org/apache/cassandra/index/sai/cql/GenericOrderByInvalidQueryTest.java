@@ -101,7 +101,7 @@ public class GenericOrderByInvalidQueryTest extends SAITester
         createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
         waitForIndexQueryable();
 
-        assertInvalidMessage("Cannot combine clustering column ordering with non-clustered ordering when using SAI indexes",
+        assertInvalidMessage("Cannot combine clustering column ordering with non-clustering column ordering",
                              "SELECT * FROM %s ORDER BY val, ck ASC LIMIT 2");
     }
 
