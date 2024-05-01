@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
@@ -96,7 +97,10 @@ public class InvertedIndexSearcher extends IndexSearcher
 
         if (exp.getOp().isEquality() || exp.getOp() == Expression.Op.MATCH)
         {
-            final ByteComparable term = ByteComparable.fixedLength(exp.lower.value.encoded);
+            var type = indexContext.getValidator();
+            final ByteComparable term = type instanceof CompositeType
+                                        ? v -> type.asComparableBytes(exp.lower.value.encoded, v)
+                                        : ByteComparable.fixedLength(exp.lower.value.encoded);
             QueryEventListener.TrieIndexEventListener listener = MulticastQueryEventListeners.of(context, perColumnEventListener);
             return reader.exactMatch(term, listener, context);
         }

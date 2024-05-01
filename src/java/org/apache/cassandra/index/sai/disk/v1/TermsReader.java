@@ -28,6 +28,8 @@ import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.db.marshal.ByteBufferAccessor;
+import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
@@ -41,6 +43,7 @@ import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.AbortedOperationException;
 import org.apache.cassandra.index.sai.utils.IndexFileUtils;
+import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.Pair;
@@ -230,15 +233,34 @@ public class TermsReader implements Closeable
 
         public PostingList execute()
         {
-            // This works by creating an iterator over all the map entries for a given key and then filtering
-            // the results in the materializeResults method.
-            final ByteComparable lower = exp.lower != null ? ByteComparable.fixedLength(exp.getLowerBound()) : null;
-            final ByteComparable upper = exp.upper != null ? ByteComparable.fixedLength(exp.getUpperBound()) : null;
+            // This works by creating a slice of exactly the entries we want.
+            var someType = indexContext.getValidator();
+            if (!(someType instanceof CompositeType))
+                throw new IllegalStateException("Only composite types are supported for range queries for now");
+            var type = (CompositeType) someType;
+
+            // TODO how do we make this generic so we don't explicitly reference the ByteBufferAccessor.instance here?
+            ByteComparable lower = null;
+            if (exp.lower != null)
+            {
+                var terminator = exp.lower.inclusive ? ByteSource.TERMINATOR : ByteSource.GT_NEXT_COMPONENT;
+                lower = v -> type.asComparableBytes(ByteBufferAccessor.instance, exp.lower.value.raw, v, terminator);
+            }
+            ByteComparable upper = null;
+            if (exp.upper != null)
+            {
+                var terminator = exp.upper.inclusive ? ByteSource.TERMINATOR : ByteSource.LT_NEXT_COMPONENT;
+                upper = v -> type.asComparableBytes(ByteBufferAccessor.instance, exp.upper.value.raw, v, terminator);
+            }
+            // Note: we always pass true for include start because we use the ByteComparable terminator above
+            // to selectively determine when we have a match on the first/last term. This is probably part of the API
+            // that could change, but it's been there for a bit, so we'll leave it for now.
             try (TrieTermsDictionaryReader reader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(),
                                                                                   termDictionaryRoot,
                                                                                   lower,
                                                                                   upper,
-                                                                                  true))
+                                                                                  true,
+                                                                                  false))
             {
                 if (!reader.hasNext())
                     return PostingList.EMPTY;
@@ -276,24 +298,18 @@ public class TermsReader implements Closeable
 
             do
             {
-                Pair<ByteComparable, Long> nextTriePair = reader.next();
-                ByteSource mapEntry = nextTriePair.left.asComparableBytes(ByteComparable.Version.OSS41);
-                long postingsOffset = nextTriePair.right;
-                byte[] nextBytes = ByteSourceInverse.readBytes(mapEntry);
+                long postingsOffset = reader.nextAsLong();
 
-                if (exp.isSatisfiedBy(ByteBuffer.wrap(nextBytes)))
-                {
-                    var blocksSummary = new PostingsReader.BlocksSummary(postingsSummaryInput, postingsOffset, PostingsReader.InputCloser.NOOP);
-                    var currentReader = new PostingsReader(postingsInput,
-                                                           blocksSummary,
-                                                           listener.postingListEventListener(),
-                                                           PostingsReader.InputCloser.NOOP);
+                var blocksSummary = new PostingsReader.BlocksSummary(postingsSummaryInput, postingsOffset, PostingsReader.InputCloser.NOOP);
+                var currentReader = new PostingsReader(postingsInput,
+                                                       blocksSummary,
+                                                       listener.postingListEventListener(),
+                                                       PostingsReader.InputCloser.NOOP);
 
-                    if (currentReader.size() > 0)
-                        postingLists.add(new PostingList.PeekablePostingList(currentReader));
-                    else
-                        FileUtils.close(currentReader);
-                }
+                if (currentReader.size() > 0)
+                    postingLists.add(new PostingList.PeekablePostingList(currentReader));
+                else
+                    FileUtils.close(currentReader);
             } while (reader.hasNext());
 
             return MergePostingList.merge(postingLists)

@@ -222,8 +222,15 @@ public class CompositeType extends AbstractCompositeType
     @Override
     public <V> ByteSource asComparableBytes(ValueAccessor<V> accessor, V data, Version version)
     {
-        if (data == null || accessor.isEmpty(data))
-            return null;
+        return asComparableBytes(accessor, data, version, ByteSource.TERMINATOR);
+    }
+
+    // TODO What is the right way to make this generic? It seems like it could be generally helpful for creating slices
+    // on tries for all types.
+    public <V> ByteSource asComparableBytes(ValueAccessor<V> accessor, V data, Version version, int terminator)
+    {
+            if (data == null || accessor.isEmpty(data))
+                return null;
 
         ByteSource[] srcs = new ByteSource[subTypes.size() * 2 + 1];
         int length = accessor.size(data);
@@ -253,8 +260,7 @@ public class CompositeType extends AbstractCompositeType
         if (i * 2 + 1 < srcs.length)
             srcs = Arrays.copyOfRange(srcs, 0, i * 2 + 1);
 
-        return ByteSource.withTerminator(version == Version.LEGACY ? ByteSource.END_OF_STREAM : ByteSource.TERMINATOR,
-                                         srcs);
+        return ByteSource.withTerminator(version == Version.LEGACY ? ByteSource.END_OF_STREAM : terminator, srcs);
     }
 
     @Override

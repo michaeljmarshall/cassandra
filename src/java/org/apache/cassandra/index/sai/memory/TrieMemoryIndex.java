@@ -215,19 +215,9 @@ public class TrieMemoryIndex extends MemoryIndex
             upperInclusive = false;
         }
 
+        // VSTODO wouldn't we want to _not_ do this eagerly? Seems like a waste if only to get the min/max keys.
         Collector cd = new Collector(keyRange);
-        Trie<PrimaryKeys> subtrie = data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive);
-        if (expression.validator instanceof CompositeType)
-            subtrie.entrySet().forEach(entry -> {
-                // When stored in memory, the keys of the trie are encoded, so we must decode them before we can
-                // compare them to the expression.
-                ByteComparable decoded = decode(entry.getKey());
-                byte[] key = ByteSourceInverse.readBytes(decoded.asComparableBytes(ByteComparable.Version.OSS41));
-                if (expression.isSatisfiedBy(ByteBuffer.wrap(key)))
-                    cd.processContent(entry.getValue());
-            });
-        else
-            subtrie.values().forEach(cd::processContent);
+        data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive).values().forEach(cd::processContent);
 
         if (cd.mergedKeys.isEmpty())
         {
@@ -258,14 +248,17 @@ public class TrieMemoryIndex extends MemoryIndex
 
     private ByteComparable encode(ByteBuffer input)
     {
-        return indexContext.isLiteral() ? version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR)
-                                        : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
+        // Composite values are considered literal, except for their encoding.
+        if (indexContext.isIndexed() && !TypeUtil.isComposite(indexContext.getValidator()))
+            return version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR);
+        return version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
     }
 
     private ByteComparable decode(ByteComparable term)
     {
-        return indexContext.isLiteral() ? version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)))
-                                        : term;
+        if (indexContext.isIndexed() && !TypeUtil.isComposite(indexContext.getValidator()))
+            return version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)));
+        return term;
     }
 
     private ByteSource append(ByteSource src, int lastByte)
