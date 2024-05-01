@@ -215,7 +215,6 @@ public class TrieMemoryIndex extends MemoryIndex
             upperInclusive = false;
         }
 
-        // VSTODO wouldn't we want to _not_ do this eagerly? Seems like a waste if only to get the min/max keys.
         Collector cd = new Collector(keyRange);
         data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive).values().forEach(cd::processContent);
 
