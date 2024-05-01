@@ -33,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
 import org.apache.cassandra.index.sai.analyzer.ByteLimitedMaterializer;
@@ -47,7 +48,9 @@ import org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph;
 import org.apache.cassandra.index.sai.utils.NamedMemoryLimiter;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
+import org.apache.cassandra.io.tries.Walker;
 import org.apache.cassandra.metrics.QuickSlidingWindowReservoir;
+import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 
@@ -172,8 +175,19 @@ public abstract class SegmentBuilder
 
         protected long addInternal(ByteBuffer term, int segmentRowId)
         {
-            BytesRefUtil.copyBufferToBytesRef(term, stringBuffer);
-            return ramIndexer.add(stringBuffer.get(), segmentRowId);
+            BytesRef bytesRef;
+            if (termComparator instanceof CompositeType)
+            {
+                var byteSource = TypeUtil.asComparableBytes(term, termComparator, Walker.BYTE_COMPARABLE_VERSION);
+                var bytes = ByteSourceInverse.readBytes(byteSource);
+                bytesRef = new BytesRef(bytes);
+            }
+            else
+            {
+                BytesRefUtil.copyBufferToBytesRef(term, stringBuffer);
+                bytesRef = stringBuffer.get();
+            }
+            return ramIndexer.add(bytesRef, segmentRowId);
         }
 
         @Override
