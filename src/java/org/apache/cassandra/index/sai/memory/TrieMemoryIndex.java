@@ -248,14 +248,14 @@ public class TrieMemoryIndex extends MemoryIndex
     private ByteComparable encode(ByteBuffer input)
     {
         // Composite values are considered literal, except for their encoding.
-        if (indexContext.isIndexed() && !TypeUtil.isComposite(indexContext.getValidator()))
+        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
             return version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR);
         return version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
     }
 
     private ByteComparable decode(ByteComparable term)
     {
-        if (indexContext.isIndexed() && !TypeUtil.isComposite(indexContext.getValidator()))
+        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
             return version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)));
         return term;
     }
