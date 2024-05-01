@@ -51,7 +51,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     public boolean trieRangeRequiresValueValidation()
     {
         // Now that we encode the trie values correctly, we do not need to test the range.
-        return true;
+        return false;
     }
 
     @Override
