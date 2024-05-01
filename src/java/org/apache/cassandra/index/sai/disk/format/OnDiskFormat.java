@@ -19,6 +19,7 @@
 package org.apache.cassandra.index.sai.disk.format;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Set;
 
@@ -38,6 +39,7 @@ import org.apache.cassandra.index.sai.memory.RowMapping;
 import org.apache.cassandra.index.sai.memory.TrieMemtableIndex;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 
 /**
  * An interface to the on-disk format of an index. This provides format agnostics methods
@@ -210,4 +212,21 @@ public interface OnDiskFormat
      * @return The {@link ByteOrder} for the file associated with the {@link IndexComponent}
      */
     public ByteOrder byteOrderFor(IndexComponent component, IndexContext context);
+
+    /**
+     * Encode the given input into a {@link ByteComparable} object based on the version and the index context.
+     * @return
+     */
+    public ByteComparable encode(ByteBuffer input, IndexContext context);
+
+    /**
+     * Decode the given input into a {@link ByteComparable} object based on the version and the index context.
+     * @return
+     */
+    public ByteComparable decode(ByteComparable term, IndexContext indexContext);
+
+    /**
+     * Whether a trie range result requires validation after reading from the trie.
+     */
+    public boolean trieRangeRequiresValueValidation();
 }

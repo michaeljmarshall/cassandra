@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sai.disk.v1;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.EnumSet;
 import java.util.Set;
@@ -53,6 +54,9 @@ import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.DefaultNameFactory;
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
+import org.apache.cassandra.utils.bytecomparable.ByteSource;
+import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 import org.apache.lucene.store.IndexInput;
 
 import static org.apache.cassandra.utils.FBUtilities.prettyPrintMemory;
@@ -302,6 +306,45 @@ public class V1OnDiskFormat implements OnDiskFormat
     public ByteOrder byteOrderFor(IndexComponent indexComponent, IndexContext context)
     {
         return ByteOrder.BIG_ENDIAN;
+    }
+
+    @Override
+    public boolean trieRangeRequiresValueValidation()
+    {
+        return true;
+    }
+
+    @Override
+    public ByteComparable encode(ByteBuffer input, IndexContext indexContext)
+    {
+        return indexContext.isLiteral() ? version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR)
+                                        : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
+    }
+
+    @Override
+    public ByteComparable decode(ByteComparable term, IndexContext indexContext)
+    {
+        return indexContext.isLiteral() ? version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)))
+                                        : term;
+    }
+
+    protected ByteSource append(ByteSource src, int lastByte)
+    {
+        return new ByteSource()
+        {
+            boolean done = false;
+            @Override
+            public int next()
+            {
+                if (done)
+                    return END_OF_STREAM;
+                int n = src.next();
+                if (n != END_OF_STREAM)
+                    return n;
+                done = true;
+                return lastByte;
+            }
+        };
     }
 
     protected boolean isBuildCompletionMarker(IndexComponent indexComponent)

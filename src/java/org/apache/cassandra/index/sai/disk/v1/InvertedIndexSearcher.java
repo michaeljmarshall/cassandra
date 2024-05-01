@@ -49,14 +49,14 @@ public class InvertedIndexSearcher extends IndexSearcher
 {
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-    private final TermsReader reader;
-    private final QueryEventListener.TrieIndexEventListener perColumnEventListener;
+    protected final TermsReader reader;
+    protected final QueryEventListener.TrieIndexEventListener perColumnEventListener;
 
-    InvertedIndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
-                          PerIndexFiles perIndexFiles,
-                          SegmentMetadata segmentMetadata,
-                          IndexDescriptor indexDescriptor,
-                          IndexContext indexContext) throws IOException
+    protected InvertedIndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
+                                    PerIndexFiles perIndexFiles,
+                                    SegmentMetadata segmentMetadata,
+                                    IndexDescriptor indexDescriptor,
+                                    IndexContext indexContext) throws IOException
     {
         super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext);
 
@@ -90,17 +90,14 @@ public class InvertedIndexSearcher extends IndexSearcher
         return toPrimaryKeyIterator(postingList, context);
     }
 
-    private PostingList searchPosting(Expression exp, QueryContext context)
+    protected PostingList searchPosting(Expression exp, QueryContext context)
     {
         if (logger.isTraceEnabled())
             logger.trace(indexContext.logMessage("Searching on expression '{}'..."), exp);
 
         if (exp.getOp().isEquality() || exp.getOp() == Expression.Op.MATCH)
         {
-            var type = indexContext.getValidator();
-            final ByteComparable term = type instanceof CompositeType
-                                        ? v -> type.asComparableBytes(exp.lower.value.encoded, v)
-                                        : ByteComparable.fixedLength(exp.lower.value.encoded);
+            final ByteComparable term = ByteComparable.fixedLength(exp.lower.value.encoded);
             QueryEventListener.TrieIndexEventListener listener = MulticastQueryEventListeners.of(context, perColumnEventListener);
             return reader.exactMatch(term, listener, context);
         }

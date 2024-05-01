@@ -40,6 +40,7 @@ import org.apache.cassandra.index.sai.analyzer.ByteLimitedMaterializer;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.RAMStringIndexer;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.io.BytesRefUtil;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.BKDTreeRamBuffer;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.NumericIndexWriter;
@@ -176,7 +177,9 @@ public abstract class SegmentBuilder
         protected long addInternal(ByteBuffer term, int segmentRowId)
         {
             BytesRef bytesRef;
-            if (termComparator instanceof CompositeType)
+            // TODO need to find the right abstraction for this part. Do we need one more method in the onDiskFormat?
+            if (!Version.LATEST.onDiskFormat().trieRangeRequiresValueValidation()
+                && termComparator instanceof CompositeType)
             {
                 var byteSource = TypeUtil.asComparableBytes(term, termComparator, Walker.BYTE_COMPARABLE_VERSION);
                 var bytes = ByteSourceInverse.readBytes(byteSource);

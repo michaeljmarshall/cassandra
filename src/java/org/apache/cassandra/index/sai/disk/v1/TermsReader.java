@@ -131,10 +131,25 @@ public class TermsReader implements Closeable
         return new TermQuery(term, perQueryEventListener, context).execute();
     }
 
+    /**
+     * Range query that uses the expression to find the posting lists for the terms that fall within the range.
+     * Intended for use with composite types when the value wasn't encoded correctly, so the expression is tested
+     * against the value.
+     */
     public PostingList rangeMatch(Expression exp, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
     {
         perQueryEventListener.onSegmentHit();
         return new RangeQuery(exp, perQueryEventListener, context).execute();
+    }
+
+    /**
+     * Range query that uses the lower and upper bounds to find the posting lists for the terms that fall within the
+     * range.
+     */
+    public PostingList rangeMatch(ByteComparable lower, ByteComparable upper, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
+    {
+        perQueryEventListener.onSegmentHit();
+        return new RangeQuery(lower, upper, perQueryEventListener, context).execute();
     }
 
     @VisibleForTesting
@@ -222,6 +237,22 @@ public class TermsReader implements Closeable
         private final QueryContext context;
 
         private final Expression exp;
+        private final ByteComparable lower;
+        private final ByteComparable upper;
+
+        // When provided with the lower and the upper, we do not need to do any validation afterwards
+        RangeQuery(ByteComparable lower,
+                   ByteComparable upper,
+                   QueryEventListener.TrieIndexEventListener listener,
+                   QueryContext context)
+        {
+            this.listener = listener;
+            this.exp = null;
+            lookupStartTime = System.nanoTime();
+            this.context = context;
+            this.lower = lower;
+            this.upper = upper;
+        }
 
         RangeQuery(Expression exp, QueryEventListener.TrieIndexEventListener listener, QueryContext context)
         {
@@ -229,29 +260,14 @@ public class TermsReader implements Closeable
             this.exp = exp;
             lookupStartTime = System.nanoTime();
             this.context = context;
+            // This works by creating an iterator over all the map entries for a given key and then filtering
+            // the results in the materializeResults method.
+            this.lower = exp.lower != null ? ByteComparable.fixedLength(exp.getLowerBound()) : null;
+            this.upper = exp.upper != null ? ByteComparable.fixedLength(exp.getUpperBound()) : null;
         }
 
         public PostingList execute()
         {
-            // This works by creating a slice of exactly the entries we want.
-            var someType = indexContext.getValidator();
-            if (!(someType instanceof CompositeType))
-                throw new IllegalStateException("Only composite types are supported for range queries for now");
-            var type = (CompositeType) someType;
-
-            // TODO how do we make this generic so we don't explicitly reference the ByteBufferAccessor.instance here?
-            ByteComparable lower = null;
-            if (exp.lower != null)
-            {
-                var terminator = exp.lower.inclusive ? ByteSource.TERMINATOR : ByteSource.GT_NEXT_COMPONENT;
-                lower = v -> type.asComparableBytes(ByteBufferAccessor.instance, exp.lower.value.raw, v, terminator);
-            }
-            ByteComparable upper = null;
-            if (exp.upper != null)
-            {
-                var terminator = exp.upper.inclusive ? ByteSource.TERMINATOR : ByteSource.LT_NEXT_COMPONENT;
-                upper = v -> type.asComparableBytes(ByteBufferAccessor.instance, exp.upper.value.raw, v, terminator);
-            }
             // Note: we always pass true for include start because we use the ByteComparable terminator above
             // to selectively determine when we have a match on the first/last term. This is probably part of the API
             // that could change, but it's been there for a bit, so we'll leave it for now.
@@ -260,13 +276,15 @@ public class TermsReader implements Closeable
                                                                                   lower,
                                                                                   upper,
                                                                                   true,
-                                                                                  false))
+                                                                                  exp != null))
             {
                 if (!reader.hasNext())
                     return PostingList.EMPTY;
 
                 context.checkpoint();
-                PostingList postings = readAndMergePostings(reader);
+                PostingList postings = exp == null
+                                       ? readAndMergePostings(reader)
+                                       : readValidateValueAndMergePostings(reader);
 
                 listener.onTraversalComplete(System.nanoTime() - lookupStartTime, TimeUnit.NANOSECONDS);
 
@@ -299,14 +317,9 @@ public class TermsReader implements Closeable
             do
             {
                 long postingsOffset = reader.nextAsLong();
+                var currentReader = currentReader(postingsInput, postingsSummaryInput, postingsOffset);
 
-                var blocksSummary = new PostingsReader.BlocksSummary(postingsSummaryInput, postingsOffset, PostingsReader.InputCloser.NOOP);
-                var currentReader = new PostingsReader(postingsInput,
-                                                       blocksSummary,
-                                                       listener.postingListEventListener(),
-                                                       PostingsReader.InputCloser.NOOP);
-
-                if (currentReader.size() > 0)
+                if (!currentReader.isEmpty())
                     postingLists.add(new PostingList.PeekablePostingList(currentReader));
                 else
                     FileUtils.close(currentReader);
@@ -314,6 +327,56 @@ public class TermsReader implements Closeable
 
             return MergePostingList.merge(postingLists)
                                    .onClose(() -> FileUtils.close(postingsInput, postingsSummaryInput));
+        }
+
+        /**
+         * Reads the posting lists for the matching terms and merges them into a single posting list.
+         * It assumes that the posting list for each term is sorted.
+         *
+         * @return the posting lists for the terms matching the query.
+         */
+        private PostingList readValidateValueAndMergePostings(TrieTermsDictionaryReader reader) throws IOException
+        {
+            assert reader.hasNext();
+            ArrayList<PostingList.PeekablePostingList> postingLists = new ArrayList<>();
+
+            // index inputs will be closed with the onClose method of the returned merged posting list
+            IndexInput postingsInput = IndexFileUtils.instance.openInput(postingsFile);
+            IndexInput postingsSummaryInput = IndexFileUtils.instance.openInput(postingsFile);
+
+            do
+            {
+                Pair<ByteComparable, Long> nextTriePair = reader.next();
+                ByteSource mapEntry = nextTriePair.left.asComparableBytes(ByteComparable.Version.OSS41);
+                long postingsOffset = nextTriePair.right;
+                byte[] nextBytes = ByteSourceInverse.readBytes(mapEntry);
+
+                if (exp.isSatisfiedBy(ByteBuffer.wrap(nextBytes)))
+                {
+                    var currentReader = currentReader(postingsInput, postingsSummaryInput, postingsOffset);
+
+                    if (!currentReader.isEmpty())
+                        postingLists.add(new PostingList.PeekablePostingList(currentReader));
+                    else
+                        FileUtils.close(currentReader);
+                }
+            } while (reader.hasNext());
+
+            return MergePostingList.merge(postingLists)
+                                   .onClose(() -> FileUtils.close(postingsInput, postingsSummaryInput));
+        }
+
+        private PostingsReader currentReader(IndexInput postingsInput,
+                                             IndexInput postingsSummaryInput,
+                                             long postingsOffset) throws IOException
+        {
+            var blocksSummary = new PostingsReader.BlocksSummary(postingsSummaryInput,
+                                                                 postingsOffset,
+                                                                 PostingsReader.InputCloser.NOOP);
+            return new PostingsReader(postingsInput,
+                                      blocksSummary,
+                                      listener.postingListEventListener(),
+                                      PostingsReader.InputCloser.NOOP);
         }
     }
 

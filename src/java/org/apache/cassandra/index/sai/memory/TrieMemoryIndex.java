@@ -46,6 +46,7 @@ import org.apache.cassandra.db.tries.Trie;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeys;
@@ -54,7 +55,6 @@ import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
-import org.apache.cassandra.utils.bytecomparable.ByteSource;
 import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 
 public class TrieMemoryIndex extends MemoryIndex
@@ -216,7 +216,18 @@ public class TrieMemoryIndex extends MemoryIndex
         }
 
         Collector cd = new Collector(keyRange);
-        data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive).values().forEach(cd::processContent);
+        Trie<PrimaryKeys> subtrie = data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive);
+        if (Version.LATEST.onDiskFormat().trieRangeRequiresValueValidation() && expression.validator instanceof CompositeType)
+            subtrie.entrySet().forEach(entry -> {
+                // When stored in memory, the keys of the trie are encoded, so we must decode them before we can
+                // compare them to the expression.
+                ByteComparable decoded = decode(entry.getKey());
+                byte[] key = ByteSourceInverse.readBytes(decoded.asComparableBytes(ByteComparable.Version.OSS41));
+                if (expression.isSatisfiedBy(ByteBuffer.wrap(key)))
+                    cd.processContent(entry.getValue());
+            });
+        else
+            subtrie.values().forEach(cd::processContent);
 
         if (cd.mergedKeys.isEmpty())
         {
@@ -247,38 +258,12 @@ public class TrieMemoryIndex extends MemoryIndex
 
     private ByteComparable encode(ByteBuffer input)
     {
-        // Composite values are considered literal, except for their encoding.
-        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
-            return version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR);
-        return version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
+        return Version.LATEST.onDiskFormat().encode(input, indexContext);
     }
 
     private ByteComparable decode(ByteComparable term)
     {
-        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
-            return version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)));
-        return term;
-    }
-
-    private ByteSource append(ByteSource src, int lastByte)
-    {
-        return new ByteSource()
-        {
-            boolean done = false;
-
-            @Override
-            public int next()
-            {
-                if (done)
-                    return END_OF_STREAM;
-                int n = src.next();
-                if (n != END_OF_STREAM)
-                    return n;
-
-                done = true;
-                return lastByte;
-            }
-        };
+        return Version.LATEST.onDiskFormat().decode(term, indexContext);
     }
 
     class PrimaryKeysReducer implements MemtableTrie.UpsertTransformer<PrimaryKeys, PrimaryKey>
