@@ -22,7 +22,6 @@ import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
-import org.apache.cassandra.db.tries.Direction;
 import org.apache.cassandra.db.tries.MemtableTrie;
 import org.apache.cassandra.db.tries.Trie;
 import org.apache.cassandra.db.tries.TrieEntriesWalker;
@@ -44,9 +43,6 @@ public class MemtableTrieReadBench
 
     @Param({"1000", "100000", "10000000"})
     int count = 1000;
-
-    @Param({"FORWARD"})
-    Direction direction = Direction.FORWARD;
 
     final static MemtableTrie.UpsertTransformer<Byte, Byte> resolver = (x, y) -> y;
 
@@ -149,7 +145,7 @@ public class MemtableTrieReadBench
             }
         }
         Counter counter = new Counter();
-        trie.process(counter, direction);
+        trie.process(counter);
         return counter.sum;
     }
 
@@ -166,7 +162,7 @@ public class MemtableTrieReadBench
     public int iterateEntries()
     {
         int sum = 0;
-        for (Map.Entry<ByteComparable, Byte> en : trie.entrySet(direction))
+        for (Map.Entry<ByteComparable, Byte> en : trie.entrySet())
             sum += en.getValue();
         return sum;
     }

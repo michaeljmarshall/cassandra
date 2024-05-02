@@ -294,26 +294,19 @@ public class SlicedTrieTest
         return new Trie<Integer>()
         {
             @Override
-            protected Cursor<Integer> cursor(Direction direction)
+            protected Cursor<Integer> cursor()
             {
-                return new singleLevelCursor(direction);
+                return new singleLevelCursor();
             }
 
             class singleLevelCursor implements Cursor<Integer>
             {
-                final Direction direction;
                 int current = -1;
-
-                singleLevelCursor(Direction direction)
-                {
-                    this.direction = direction;
-                    current = direction.start(-1, childs);
-                }
 
                 @Override
                 public int advance()
                 {
-                    current += direction.increase;
+                    ++current;
                     return depth();
                 }
 
@@ -326,9 +319,9 @@ public class SlicedTrieTest
                 @Override
                 public int depth()
                 {
-                    if (current == direction.start(-1, childs))
+                    if (current == -1)
                         return 0;
-                    if (direction.lt(current, direction.end(-1, childs)))
+                    if (current < childs)
                         return 1;
                     return -1;
                 }

@@ -61,261 +61,133 @@ public class SlicedTrie<T> extends Trie<T>
         this.includeRight = includeRight;
     }
 
-    static ByteSource add0(ByteSource src)
-    {
-        return new ByteSource()
-        {
-            boolean done = false;
-
-            @Override
-            public int next()
-            {
-                if (done)
-                    return END_OF_STREAM;
-                int next = src.next();
-                if (next != END_OF_STREAM)
-                    return next;
-                done = true;
-                return 0;
-            }
-        };
-    }
-
-    static ByteSource openAndMaybeAdd0(ByteComparable key, boolean shouldAdd0)
-    {
-        if (key == null)
-            return null;
-        ByteSource src = key.asComparableBytes(Trie.BYTE_COMPARABLE_VERSION);
-        if (shouldAdd0)
-            return add0(src);
-        else
-            return src;
-    }
-
     @Override
-    protected Cursor<T> cursor(Direction direction)
+    protected Cursor<T> cursor()
     {
-        // The cursor is left-inclusive and right-exclusive by default. If we need to change the inclusiveness, adjust
-        // the bound to the next possible value by adding a 00 byte at the end.
-        ByteSource leftSource = openAndMaybeAdd0(left, !includeLeft);
-        ByteSource rightSource = openAndMaybeAdd0(right, includeRight);
-
-        // Empty left bound is the same as having no left bound, adjust for that.
-        int leftNext = -1;
-        if (leftSource != null)
-        {
-            leftNext = leftSource.next();
-            if (leftNext == ByteSource.END_OF_STREAM)
-                leftSource = null;
-        }
-
-        // Empty right bound means the result can only be empty. Make things easier for the cursor by handling this.
-        int rightNext = -1;
-        if (rightSource != null)
-        {
-            rightNext = rightSource.next();
-            if (rightNext == ByteSource.END_OF_STREAM)
-            {
-                assert leftSource == null : "Invalid range " + sliceString();
-                return Trie.<T>empty().cursor(direction);
-            }
-        }
-
-        return new SlicedCursor<>(source.cursor(direction),
-                                  leftSource,
-                                  leftNext,
-                                  rightSource,
-                                  rightNext,
-                                  direction);
-    }
-
-    String sliceString()
-    {
-        return String.format("%s%s;%s%s",
-                             includeLeft ? "[" : "(",
-                             left.byteComparableAsString(Trie.BYTE_COMPARABLE_VERSION),
-                             right.byteComparableAsString(Trie.BYTE_COMPARABLE_VERSION),
-                             includeRight ? "]" : ")");
+        return new SlicedCursor<>(this);
     }
 
     private enum State
     {
-        /**
-         * The cursor is at the initial phase while it is walking prefixes of both bounds.
-         * Content is not to be reported.
-         */
-        COMMON_PREFIX,
-        /**
-         * The cursor is positioned on some prefix of the start bound, strictly before any prefix of the end bound in
-         * iteration order.
-         * Content should only be reported in the reverse direction (as these prefixes are prefixes of the right bound
-         * and included in the slice).
-         */
-        START_PREFIX,
-        /**
-         * The cursor is positioned inside the range, i.e. strictly between any prefixes of the start and end bounds.
-         * All content should be reported.
-         */
+        /** The cursor is still positioned on some prefix of the left bound. Content should not be produced. */
+        BEFORE_LEFT,
+        /** The cursor is positioned inside the range, i.e. beyond the left bound, possibly on a prefix of the right. */
         INSIDE,
-        /**
-         * The cursor is positioned on some prefix of the end bound, strictly after any prefix of the start bound.
-         * Content should only be reported in the forward direction.
-         */
-        END_PREFIX,
-        /** The cursor is positioned beyond the end bound. Exhaustion (depth -1) has been reported. */
-        EXHAUSTED;
+        /** The cursor is positioned beyond the right bound. Exhaustion (depth -1) has been reported. */
+        AFTER_RIGHT;
     }
 
     private static class SlicedCursor<T> implements Cursor<T>
     {
-        private final ByteSource start;
-        private final ByteSource end;
+        private final ByteSource left;
+        private final ByteSource right;
+        private final boolean includeLeft;
+        private final boolean excludeRight;
         private final Cursor<T> source;
-        private final Direction direction;
 
         State state;
-        int startNext;
-        int startNextDepth;
-        int endNext;
-        int endNextDepth;
+        int leftNext;
+        int leftNextDepth;
+        int rightNext;
+        int rightNextDepth;
 
-        public SlicedCursor(Cursor<T> source,
-                            ByteSource leftSource,
-                            int leftNext,
-                            ByteSource rightSource,
-                            int rightNext,
-                            Direction direction)
+        public SlicedCursor(SlicedTrie<T> slicedTrie)
         {
-            this.source = source;
-            this.direction = direction;
-            start = direction.select(leftSource, rightSource);
-            end = direction.select(rightSource, leftSource);
-            startNext = direction.select(leftNext, rightNext);
-            endNext = direction.select(rightNext, leftNext);
-            startNextDepth = start != null ? 1 : 0;
-            endNextDepth = end != null ? 1 : 0;
-            state = start != null
-                    ? end != null
-                      ? State.COMMON_PREFIX
-                      : State.START_PREFIX
-                    : end != null
-                      ? State.END_PREFIX
-                      : State.INSIDE;
+            source = slicedTrie.source.cursor();
+            if (slicedTrie.left != null)
+            {
+                left = slicedTrie.left.asComparableBytes(BYTE_COMPARABLE_VERSION);
+                includeLeft = slicedTrie.includeLeft;
+                leftNext = left.next();
+                leftNextDepth = 1;
+                if (leftNext == ByteSource.END_OF_STREAM && includeLeft)
+                    state = State.INSIDE;
+                else
+                    state = State.BEFORE_LEFT;
+            }
+            else
+            {
+                left = null;
+                includeLeft = true;
+                state = State.INSIDE;
+            }
+
+            if (slicedTrie.right != null)
+            {
+                right = slicedTrie.right.asComparableBytes(BYTE_COMPARABLE_VERSION);
+                excludeRight = !slicedTrie.includeRight;
+                rightNext = right.next();
+                rightNextDepth = 1;
+                if (rightNext == ByteSource.END_OF_STREAM && excludeRight)
+                    state = State.BEFORE_LEFT;  // This is a hack, we are after the right bound but we don't want to
+                                                // report depth -1 yet. So just make sure root is not reported.
+            }
+            else
+            {
+                right = null;
+                excludeRight = true;
+                rightNextDepth = 0;
+            }
         }
 
         @Override
         public int advance()
         {
+            assert (state != State.AFTER_RIGHT);
+
             int newDepth = source.advance();
             int transition = source.incomingTransition();
 
-            switch (state)
+            if (state == State.BEFORE_LEFT)
             {
-                case COMMON_PREFIX:
-                case START_PREFIX:
-                    // Skip any transitions before the start bound
-                    while (newDepth == startNextDepth && direction.lt(transition, startNext))
-                    {
-                        newDepth = source.skipChildren();
-                        transition = source.incomingTransition();
-                    }
+                // Skip any transitions before the left bound
+                while (newDepth == leftNextDepth && transition < leftNext)
+                {
+                    newDepth = source.skipChildren();
+                    transition = source.incomingTransition();
+                }
 
-                    // Check if we are still following the start bound
-                    if (newDepth == startNextDepth && transition == startNext)
-                    {
-                        assert startNext != ByteSource.END_OF_STREAM;
-                        startNext = start.next();
-                        ++startNextDepth;
-                        State currState = state;
-                        // In the forward direction the exact match for the left bound and all descendant states are
-                        // included in the set.
-                        // In the reverse direction we will instead use the -1 as target transition and thus ascend on
-                        // the next advance (skipping the exact right bound and all its descendants).
-                        if (startNext == ByteSource.END_OF_STREAM && direction.isForward())
-                            state = State.INSIDE; // checkEndBound may adjust this to END_PREFIX
-                        if (currState == State.START_PREFIX)
-                            return newDepth;   // there is no need to check the end bound as we descended along a
-                                               // strictly earlier path
-                    }
-                    else // otherwise we are beyond the start bound
-                        state = State.INSIDE; // checkEndBound may adjust this to END_PREFIX
-                    // pass through
-                case INSIDE:
-                case END_PREFIX:
-                    return checkEndBound(newDepth, transition);
-                default:
-                    throw new AssertionError();
+                // Check if we are still following the left bound
+                if (newDepth == leftNextDepth && transition == leftNext)
+                {
+                    assert leftNext != ByteSource.END_OF_STREAM;
+                    leftNext = left.next();
+                    ++leftNextDepth;
+                    if (leftNext == ByteSource.END_OF_STREAM && includeLeft)
+                        state = State.INSIDE; // report the content on the left bound
+                }
+                else // otherwise we are beyond it
+                    state = State.INSIDE;
             }
+
+            return checkRightBound(newDepth, transition);
         }
 
         private int markDone()
         {
-            state = State.EXHAUSTED;
+            state = State.AFTER_RIGHT;
             return -1;
         }
 
-        private int checkEndBound(int newDepth, int transition)
+        private int checkRightBound(int newDepth, int transition)
         {
             // Cursor positions compare by depth descending and transition ascending.
-            if (newDepth > endNextDepth)
-                return newDepth;    // happy and quick path in the interior of the slice
-                                    // (state == State.INSIDE can be asserted here (we skip it for efficiency))
-            if (newDepth < endNextDepth)
-                return markDone();
-            // newDepth == endDepth
-            if (direction.lt(transition, endNext))
-            {
-                adjustStateStrictlyBeforeEnd();
+            if (newDepth > rightNextDepth)
                 return newDepth;
-            }
-            if (direction.lt(endNext, transition))
+            if (newDepth < rightNextDepth)
+                return markDone();
+            // newDepth == rightDepth
+            if (transition < rightNext)
+                return newDepth;
+            if (transition > rightNext)
                 return markDone();
 
-            // Following end bound
-            endNext = end.next();
-            ++endNextDepth;
-            if (endNext == ByteSource.END_OF_STREAM)
-            {
-                // At the exact end bound.
-                if (direction.isForward())
-                {
-                    // In forward direction the right bound is not included in the slice.
-                    return markDone();
-                }
-                else
-                {
-                    // In reverse, the left bound and all its descendants are included, thus we use the -1 as limiting
-                    // transition. We can also see the bound as strictly ahead of our current position as the current
-                    // branch should be fully included.
-                    adjustStateStrictlyBeforeEnd();
-                }
-            }
-            else
-                adjustStateAtEndPrefix();
+            // Following right bound
+            rightNext = right.next();
+            ++rightNextDepth;
+            if (rightNext == ByteSource.END_OF_STREAM && excludeRight)
+                return markDone();  // do not report any content on the right bound
             return newDepth;
-        }
-
-        private void adjustStateAtEndPrefix()
-        {
-            switch (state)
-            {
-                case INSIDE:
-                    state = State.END_PREFIX;
-                    break;
-            }
-        }
-
-        private void adjustStateStrictlyBeforeEnd()
-        {
-            switch (state)
-            {
-                case COMMON_PREFIX:
-                    state = State.START_PREFIX;
-                    break;
-                case END_PREFIX:
-                    state = State.INSIDE;
-                    break;
-            }
         }
 
         @Override
@@ -323,17 +195,17 @@ public class SlicedTrie<T> extends Trie<T>
         {
             switch (state)
             {
-                case COMMON_PREFIX:
-                case START_PREFIX:
-                case END_PREFIX:
+                case BEFORE_LEFT:
                     return advance();   // descend only one level to be able to compare cursors correctly
                 case INSIDE:
                     int depth = source.depth();
+                    if (depth == rightNextDepth - 1)  // this is possible because right is already advanced;
+                        return advance();   // we need to check next byte against right boundary in this case
                     int newDepth = source.advanceMultiple(receiver);
                     if (newDepth > depth)
-                        return newDepth;    // successfully descended
+                        return newDepth;    // successfully advanced
                     // we ascended, check if we are still within boundaries
-                    return checkEndBound(newDepth, source.incomingTransition());
+                    return checkRightBound(newDepth, source.incomingTransition());
                 default:
                     throw new AssertionError();
             }
@@ -342,27 +214,17 @@ public class SlicedTrie<T> extends Trie<T>
         @Override
         public int skipChildren()
         {
-            switch (state)
-            {
-                case START_PREFIX:
-                    // Skipping children takes us beyond the start path.
-                    state = State.INSIDE;
-                case INSIDE:
-                    // Check that we are still inside after we skip.
-                    return checkEndBound(source.skipChildren(), source.incomingTransition());
-                case COMMON_PREFIX:
-                case END_PREFIX:
-                    // The skip takes us beyond the end bound; we are done.
-                    return markDone();
-                default:
-                    throw new AssertionError();
-            }
+            assert (state != State.AFTER_RIGHT);
+
+            // We are either inside or following the left bound. In the latter case ascend takes us beyond it.
+            state = State.INSIDE;
+            return checkRightBound(source.skipChildren(), source.incomingTransition());
         }
 
         @Override
         public int depth()
         {
-            return state == State.EXHAUSTED ? -1 : source.depth();
+            return state == State.AFTER_RIGHT ? -1 : source.depth();
         }
 
         @Override
@@ -374,20 +236,7 @@ public class SlicedTrie<T> extends Trie<T>
         @Override
         public T content()
         {
-            switch (state)
-            {
-                case INSIDE:
-                    return source.content();
-                // Additionally, prefixes of the right bound (which are not prefixes of the left) need to be reported:
-                case START_PREFIX:
-                    // start prefixes in reverse direction (but making sure we don't report the exact match);
-                    return !direction.isForward() && startNext != ByteSource.END_OF_STREAM ? source.content() : null;
-                case END_PREFIX:
-                    // end prefixes in forward direction.
-                    return direction.isForward() ? source.content() : null;
-                default:
-                    return null;
-            }
+            return state == State.INSIDE ? source.content() : null;
         }
     }
 }
