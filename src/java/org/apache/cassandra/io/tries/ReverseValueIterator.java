@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.io.tries;
 
-import java.util.function.Supplier;
 import javax.annotation.concurrent.NotThreadSafe;
 
 import org.apache.cassandra.io.util.Rebufferer;
@@ -100,15 +99,6 @@ public class ReverseValueIterator<Concrete extends ReverseValueIterator<Concrete
             initializeWithRightBound(root, end.asComparableBytes(BYTE_COMPARABLE_VERSION), admitPrefix, limit != null);
         else
             initializeNoRightBound(root, limit != null ? limit.next() : NOT_AT_LIMIT, admitPrefix);
-    }
-
-    protected <VALUE> VALUE nextValue(Supplier<VALUE> supplier)
-    {
-        long node = nextPayloadedNode();
-        if (node == NONE)
-            return null;
-        go(node);
-        return supplier.get();
     }
 
     void initializeWithRightBound(long root, ByteSource endStream, boolean admitPrefix, boolean hasLimit)

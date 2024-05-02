@@ -361,28 +361,20 @@ public class TrieTermsDictionaryTest extends SaiRandomizedTest
         }
 
         try (FileHandle input = indexDescriptor.createPerIndexFileHandle(IndexComponent.TERMS_DATA, indexContext);
-             TrieTermsDictionaryReader iterator = new TrieTermsDictionaryReader(input.instantiateRebufferer(), fp);
-             ReverseTrieTermsDictionaryReader reverseIterator = new ReverseTrieTermsDictionaryReader(input.instantiateRebufferer(), fp))
+             TrieTermsDictionaryReader iterator = new TrieTermsDictionaryReader(input.instantiateRebufferer(), fp))
         {
-            verifyOrder(iterator, byteComparables, true);
-            Collections.reverse(byteComparables);
-            verifyOrder(reverseIterator, byteComparables, false);
-        }
-    }
+            final Iterator<ByteComparable> expected = byteComparables.iterator();
+            int offset = 0;
+            while (iterator.hasNext())
+            {
+                assertTrue(expected.hasNext());
+                final Pair<ByteComparable, Long> actual = iterator.next();
 
-    private void verifyOrder(Iterator<Pair<ByteComparable, Long>> iterator, List<ByteComparable> byteComparables, boolean ascending)
-    {
-        var expected = byteComparables.iterator();
-        int offset = ascending ? 0 : byteComparables.size() - 1;
-        while (iterator.hasNext())
-        {
-            assertTrue(expected.hasNext()); // verify that hasNext is idempotent
-            final Pair<ByteComparable, Long> actual = iterator.next();
-            assertEquals(0, compare(expected.next(), actual.left, OSS41));
-            assertEquals(offset, actual.right.longValue());
-            offset += ascending ? 1 : -1;
+                assertEquals(0, compare(expected.next(), actual.left, OSS41));
+                assertEquals(offset++, actual.right.longValue());
+            }
+            assertFalse(expected.hasNext());
         }
-        assertFalse(expected.hasNext());
     }
 
     @Test
