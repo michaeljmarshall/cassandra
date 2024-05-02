@@ -58,7 +58,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     public ByteComparable encode(ByteBuffer input, IndexContext indexContext)
     {
         // Composite values are considered literal, except for their encoding.
-        if (indexContext.isIndexed() && !TypeUtil.isComposite(indexContext.getValidator()))
+        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
             return version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR);
         return version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
     }
@@ -66,7 +66,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     @Override
     public ByteComparable decode(ByteComparable term, IndexContext indexContext)
     {
-        if (indexContext.isIndexed() && !TypeUtil.isComposite(indexContext.getValidator()))
+        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
             return version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)));
         return term;
     }
