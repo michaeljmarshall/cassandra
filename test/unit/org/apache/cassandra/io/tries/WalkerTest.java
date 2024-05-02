@@ -22,15 +22,11 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.TreeMap;
 import java.util.function.LongSupplier;
 import java.util.function.LongToIntFunction;
-import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
 import org.apache.commons.lang3.StringUtils;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.agrona.collections.IntArrayList;
@@ -49,26 +45,6 @@ import static org.junit.Assert.assertNull;
 @SuppressWarnings({"unchecked", "RedundantSuppression"})
 public class WalkerTest extends AbstractTrieTestBase
 {
-    private static final Map<String, Integer> memoryTrieEntryMap = new TreeMap<>();
-
-    @BeforeClass
-    public static void setup()
-    {
-        // Initialize the memory representation of the trie
-        memoryTrieEntryMap.put("115", 1);
-        memoryTrieEntryMap.put("151", 2);
-        memoryTrieEntryMap.put("155", 3);
-        memoryTrieEntryMap.put("511", 4);
-        memoryTrieEntryMap.put("515", 5);
-        memoryTrieEntryMap.put("551", 6);
-        memoryTrieEntryMap.put("555555555555555555555555555555555555555555555555555555555555555555", 7);
-        memoryTrieEntryMap.put("70", 8);
-        memoryTrieEntryMap.put("7051", 9);
-        memoryTrieEntryMap.put("717", 10);
-        memoryTrieEntryMap.put("73", 11);
-        memoryTrieEntryMap.put("737", 12);
-    }
-
     @Test
     public void testWalker() throws IOException
     {
@@ -268,9 +244,9 @@ public class WalkerTest extends AbstractTrieTestBase
 
         if (admitPrefix != ValueIterator.LeftBoundTreatment.ADMIT_EXACT)
         {
-            ReverseValueIterator<?> rit = new ReverseValueIterator<>(source, rootPos, source(from), source(to), admitPrefix == ValueIterator.LeftBoundTreatment.ADMIT_PREFIXES, true);
+            ReverseValueIterator<?> rit = new ReverseValueIterator<>(source, rootPos, source(from), source(to), admitPrefix == ValueIterator.LeftBoundTreatment.ADMIT_PREFIXES);
             reverse(expected);
-            checkReturns(from + "<--" + to, rit::nextPayloadedNode, pos -> getPayloadFlags(buffer, (int) pos), rit::collectedKey, expected);
+            checkReturns(from + "<--" + to, rit::nextPayloadedNode, pos -> getPayloadFlags(buffer, (int) pos), expected);
             reverse(expected);  // return array in its original form if reused
         }
     }
@@ -280,12 +256,12 @@ public class WalkerTest extends AbstractTrieTestBase
     private void checkIterates(ByteBuffer buffer, long rootPos, int... expected)
     {
         Rebufferer source = new ByteBufRebufferer(buffer);
-        ValueIterator<?> it = new ValueIterator<>(source, rootPos, true);
-        checkReturns("Forward", it::nextPayloadedNode, pos -> getPayloadFlags(buffer, (int) pos), it::collectedKey, expected);
+        ValueIterator<?> it = new ValueIterator<>(source, rootPos);
+        checkReturns("Forward", it::nextPayloadedNode, pos -> getPayloadFlags(buffer, (int) pos), expected);
 
-        ReverseValueIterator<?> rit = new ReverseValueIterator<>(source, rootPos, true);
+        ReverseValueIterator<?> rit = new ReverseValueIterator<>(source, rootPos);
         reverse(expected);
-        checkReturns("Reverse", rit::nextPayloadedNode, pos -> getPayloadFlags(buffer, (int) pos), rit::collectedKey, expected);
+        checkReturns("Reverse", rit::nextPayloadedNode, pos -> getPayloadFlags(buffer, (int) pos), expected);
         reverse(expected);  // return array in its original form if reused
     }
 
@@ -305,37 +281,12 @@ public class WalkerTest extends AbstractTrieTestBase
         return TrieNode.at(buffer, pos).payloadFlags(buffer, pos);
     }
 
-    private void checkReturns(String testCase,
-                              LongSupplier supplier,
-                              LongToIntFunction mapper,
-                              int... expected)
-    {
-        checkReturns(testCase, supplier, mapper, null, expected);
-    }
-
-    private void checkReturns(String testCase,
-                              LongSupplier supplier,
-                              LongToIntFunction mapper,
-                              Supplier<ByteComparable> byteComparableSupplier,
-                              int... expected)
+    private void checkReturns(String testCase, LongSupplier supplier, LongToIntFunction mapper, int... expected)
     {
         IntArrayList list = new IntArrayList();
         while (true)
         {
             long pos = supplier.getAsLong();
-
-            if (byteComparableSupplier != null)
-            {
-                if (byteComparableSupplier.get() == null)
-                {
-                    assertEquals(-1, pos);
-                }
-                else
-                {
-                    String value = decodeSource(byteComparableSupplier.get());
-                    assertEquals(memoryTrieEntryMap.get(value), (Integer) mapper.applyAsInt(pos));
-                }
-            }
             if (pos == -1)
                 break;
             list.add(mapper.applyAsInt(pos));
@@ -590,12 +541,19 @@ public class WalkerTest extends AbstractTrieTestBase
     {
         IncrementalTrieWriter<Integer> builder = newTrieWriter(serializer, out);
         dump = true;
-        for (Map.Entry<String, Integer> entry : memoryTrieEntryMap.entrySet())
-        {
-            String key = entry.getKey();
-            Integer value = entry.getValue();
-            builder.add(source(key), value);
-        }
+        builder.add(source("115"), 1);
+        builder.add(source("151"), 2);
+        builder.add(source("155"), 3);
+        builder.add(source("511"), 4);
+        builder.add(source("515"), 5);
+        builder.add(source("551"), 6);
+        builder.add(source("555555555555555555555555555555555555555555555555555555555555555555"), 7);
+
+        builder.add(source("70"), 8);
+        builder.add(source("7051"), 9);
+        builder.add(source("717"), 10);
+        builder.add(source("73"), 11);
+        builder.add(source("737"), 12);
         return builder;
     }
 
