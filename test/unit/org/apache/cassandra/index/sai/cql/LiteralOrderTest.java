@@ -71,4 +71,30 @@ public class LiteralOrderTest extends SAITester
             }
         });
     }
+
+    // Because we store values in a trie, we want to confirm that we always descend the trie before returning
+    // values on the DESC path.
+    @Test
+    public void testTextPrefixes() throws Throwable
+    {
+        createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val ascii)");
+        createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
+        disableCompaction();
+
+        execute("INSERT INTO %s (pk, str_val) VALUES (?, ?)", 1, "a");
+        execute("INSERT INTO %s (pk, str_val) VALUES (?, ?)", 2, "ab");
+        execute("INSERT INTO %s (pk, str_val) VALUES (?, ?)", 3, "abc");
+        execute("INSERT INTO %s (pk, str_val) VALUES (?, ?)", 4, "ad");
+
+        beforeAndAfterFlush(() -> {
+            assertRows(execute("SELECT pk FROM %s ORDER BY str_val LIMIT 2"), row(1), row(2));
+            assertRows(execute("SELECT pk FROM %s ORDER BY str_val DESC LIMIT 2"), row(4), row(3));
+        });
+
+        // Compaction triggers index build via a different mechanism, so best to test explicitly.
+        compact();
+
+        assertRows(execute("SELECT pk FROM %s ORDER BY str_val LIMIT 2"), row(1), row(2));
+        assertRows(execute("SELECT pk FROM %s ORDER BY str_val DESC LIMIT 2"), row(4), row(3));
+    }
 }

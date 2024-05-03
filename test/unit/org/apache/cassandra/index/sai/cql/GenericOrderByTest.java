@@ -28,8 +28,6 @@ import org.apache.cassandra.index.sai.plan.QueryController;
 
 public class GenericOrderByTest extends SAITester
 {
-
-
     @Test
     public void testOrderingAcrossManySstables()
     {
@@ -106,5 +104,4 @@ public class GenericOrderByTest extends SAITester
             assertRows(execute("SELECT pk FROM %s WHERE val < 0 ORDER BY str_val DESC LIMIT 1"), row(-4));
         });
     }
-
 }
