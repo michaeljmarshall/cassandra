@@ -33,7 +33,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
 import org.apache.cassandra.index.sai.analyzer.ByteLimitedMaterializer;
@@ -41,7 +40,6 @@ import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.RAMStringIndexer;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.format.Version;
-import org.apache.cassandra.index.sai.disk.io.BytesRefUtil;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.BKDTreeRamBuffer;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.NumericIndexWriter;
 import org.apache.cassandra.index.sai.disk.v1.trie.InvertedIndexWriter;
@@ -53,7 +51,6 @@ import org.apache.cassandra.io.tries.Walker;
 import org.apache.cassandra.metrics.QuickSlidingWindowReservoir;
 import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.BytesRefBuilder;
 
 import static org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph.InvalidVectorBehavior.IGNORE;
 import static org.apache.cassandra.utils.FBUtilities.busyWaitWhile;
@@ -162,7 +159,7 @@ public abstract class SegmentBuilder
         {
             super(rowIdOffset, termComparator, limiter);
 
-            ramIndexer = new RAMStringIndexer(termComparator);
+            ramIndexer = new RAMStringIndexer();
             totalBytesAllocated = ramIndexer.estimatedBytesUsed();
             totalBytesAllocatedConcurrent.add(totalBytesAllocated);
         }

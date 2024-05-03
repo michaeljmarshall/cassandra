@@ -38,7 +38,7 @@ public class RAMStringIndexerTest extends SaiRandomizedTest
     @Test
     public void test() throws Exception
     {
-        RAMStringIndexer indexer = new RAMStringIndexer(UTF8Type.instance);
+        RAMStringIndexer indexer = new RAMStringIndexer();
 
         indexer.add(new BytesRef("0"), 100);
         indexer.add(new BytesRef("2"), 102);
@@ -73,7 +73,7 @@ public class RAMStringIndexerTest extends SaiRandomizedTest
     @Test
     public void testLargeSegment() throws IOException
     {
-        final RAMStringIndexer indexer = new RAMStringIndexer(UTF8Type.instance);
+        final RAMStringIndexer indexer = new RAMStringIndexer();
         final int numTerms = between(1 << 10, 1 << 13);
         final int numPostings = between(1 << 5, 1 << 10);
 

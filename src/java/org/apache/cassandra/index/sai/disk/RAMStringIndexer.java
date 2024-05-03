@@ -20,7 +20,6 @@ package org.apache.cassandra.index.sai.disk;
 import java.nio.ByteBuffer;
 import java.util.NoSuchElementException;
 
-import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
 import org.apache.lucene.util.ArrayUtil;
@@ -35,7 +34,6 @@ import org.apache.lucene.util.Counter;
  */
 public class RAMStringIndexer
 {
-    private final AbstractType<?> termComparator;
     private final BytesRefHash termsHash;
     private final RAMPostingSlices slices;
     private final Counter bytesUsed;
@@ -43,9 +41,8 @@ public class RAMStringIndexer
     private int rowCount = 0;
     private int[] lastSegmentRowID = new int[RAMPostingSlices.DEFAULT_TERM_DICT_SIZE];
 
-    public RAMStringIndexer(AbstractType<?> termComparator)
+    public RAMStringIndexer()
     {
-        this.termComparator = termComparator;
         bytesUsed = Counter.newCounter();
 
         ByteBlockPool termsPool = new ByteBlockPool(new ByteBlockPool.DirectTrackingAllocator(bytesUsed));
