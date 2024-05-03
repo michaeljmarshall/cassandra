@@ -42,7 +42,7 @@ public class Version
     public static final Version BA = new Version("ba", V2OnDiskFormat.instance, (c, i) -> stargazerFileNameFormat(c, i, "ba"));
     // Converged Cassandra with JVector
     public static final Version CA = new Version("ca", V3OnDiskFormat.instance, (c, i) -> stargazerFileNameFormat(c, i, "ca"));
-    // Encode maps using CompositeType to ensure trie entries are sorted for range queries
+    // Encode trie entries using their AbstractType to ensure trie entries are sorted for range queries and are prefix free.
     public static final Version DA = new Version("da", V4OnDiskFormat.instance, (c, i) -> stargazerFileNameFormat(c, i, "da"));
 
     // These are in reverse-chronological order so that the latest version is first. Version matching tests

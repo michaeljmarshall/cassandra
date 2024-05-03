@@ -21,6 +21,7 @@ package org.apache.cassandra.index.sai.disk.v4;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.v1.IndexSearcher;
@@ -30,7 +31,6 @@ import org.apache.cassandra.index.sai.disk.v3.V3OnDiskFormat;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
-import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 
 public class V4OnDiskFormat extends V3OnDiskFormat
 {
@@ -48,26 +48,23 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     }
 
     @Override
-    public boolean trieRangeRequiresValueValidation()
+    public ByteComparable encode(ByteBuffer input, AbstractType<?> type)
     {
-        // Now that we encode the trie values correctly, we do not need to test the range.
-        return false;
+        // TODO how important is the terminator? A terminator is used for range queries to simplify LT, EQ, and GT
+        //  bounds by preventing prefix matches. However, we don't support range queries on text fields. Is that something
+        //  we want to support?
+        // If we don't want range queries on text fields, then it's not necessary because encoding with
+        // the type's comparator will prevent weakly prefix free trie encodings that will meet out needs.
+        var bc = TypeUtil.asComparableBytes(input, type);
+        return TypeUtil.isUTF8OrAscii(type)
+               ? version -> ByteSource.appendTerminator(bc.asComparableBytes(version), ByteSource.TERMINATOR)
+               : bc;
     }
 
     @Override
-    public ByteComparable encode(ByteBuffer input, IndexContext indexContext)
+    public ByteComparable unescape(ByteComparable term, AbstractType<?> type)
     {
-        // Composite values are considered literal, except for their encoding.
-        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
-            return version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR);
-        return version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
-    }
-
-    @Override
-    public ByteComparable decode(ByteComparable term, IndexContext indexContext)
-    {
-        if (indexContext.isLiteral() && !TypeUtil.isComposite(indexContext.getValidator()))
-            return version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)));
+        // DA (v4) is the first version where we retain the encoding and intentionally do not unescape the term.
         return term;
     }
 }

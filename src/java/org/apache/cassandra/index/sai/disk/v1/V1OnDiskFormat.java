@@ -33,6 +33,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.lifecycle.LifecycleNewTracker;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
@@ -309,42 +310,18 @@ public class V1OnDiskFormat implements OnDiskFormat
     }
 
     @Override
-    public boolean trieRangeRequiresValueValidation()
+    public ByteComparable encode(ByteBuffer input, AbstractType<?> type)
     {
-        return true;
+        // All elements
+        return TypeUtil.isLiteral(type) ? version -> ByteSource.appendTerminator(ByteSource.of(input, version), ByteSource.TERMINATOR)
+                                        : TypeUtil.asComparableBytes(input, type);
     }
 
     @Override
-    public ByteComparable encode(ByteBuffer input, IndexContext indexContext)
+    public ByteComparable unescape(ByteComparable term, AbstractType<?> type)
     {
-        return indexContext.isLiteral() ? version -> append(ByteSource.of(input, version), ByteSource.TERMINATOR)
-                                        : version -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), version);
-    }
-
-    @Override
-    public ByteComparable decode(ByteComparable term, IndexContext indexContext)
-    {
-        return indexContext.isLiteral() ? version -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(version)))
+        return TypeUtil.isLiteral(type) ? v -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(v)))
                                         : term;
-    }
-
-    protected ByteSource append(ByteSource src, int lastByte)
-    {
-        return new ByteSource()
-        {
-            boolean done = false;
-            @Override
-            public int next()
-            {
-                if (done)
-                    return END_OF_STREAM;
-                int n = src.next();
-                if (n != END_OF_STREAM)
-                    return n;
-                done = true;
-                return lastByte;
-            }
-        };
     }
 
     protected boolean isBuildCompletionMarker(IndexComponent indexComponent)

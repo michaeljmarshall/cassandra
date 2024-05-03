@@ -229,8 +229,8 @@ public class CompositeType extends AbstractCompositeType
     // on tries for all types.
     public <V> ByteSource asComparableBytes(ValueAccessor<V> accessor, V data, Version version, int terminator)
     {
-            if (data == null || accessor.isEmpty(data))
-                return null;
+        if (data == null || accessor.isEmpty(data))
+            return null;
 
         ByteSource[] srcs = new ByteSource[subTypes.size() * 2 + 1];
         int length = accessor.size(data);

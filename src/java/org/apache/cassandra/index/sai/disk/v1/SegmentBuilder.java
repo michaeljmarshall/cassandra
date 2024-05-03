@@ -158,8 +158,6 @@ public abstract class SegmentBuilder
     {
         final RAMStringIndexer ramIndexer;
 
-        final BytesRefBuilder stringBuffer = new BytesRefBuilder();
-
         RAMStringSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter)
         {
             super(rowIdOffset, termComparator, limiter);
@@ -176,20 +174,12 @@ public abstract class SegmentBuilder
 
         protected long addInternal(ByteBuffer term, int segmentRowId)
         {
-            BytesRef bytesRef;
-            // TODO need to find the right abstraction for this part. Do we need one more method in the onDiskFormat?
-            if (!Version.LATEST.onDiskFormat().trieRangeRequiresValueValidation()
-                && termComparator instanceof CompositeType)
-            {
-                var byteSource = TypeUtil.asComparableBytes(term, termComparator, Walker.BYTE_COMPARABLE_VERSION);
-                var bytes = ByteSourceInverse.readBytes(byteSource);
-                bytesRef = new BytesRef(bytes);
-            }
-            else
-            {
-                BytesRefUtil.copyBufferToBytesRef(term, stringBuffer);
-                bytesRef = stringBuffer.get();
-            }
+            var bc = Version.LATEST.onDiskFormat().encode(term, termComparator);
+            // We only unescape for legacy reasons. See interface javadoc.
+            var unescaped = Version.LATEST.onDiskFormat().unescape(bc, termComparator);
+            // VSTODD is it worth estimating the size of the byte array to prevent unnecessary array creation?
+            var bytes = ByteSourceInverse.readBytes(unescaped.asComparableBytes(Walker.BYTE_COMPARABLE_VERSION));
+            var bytesRef = new BytesRef(bytes);
             return ramIndexer.add(bytesRef, segmentRowId);
         }
 

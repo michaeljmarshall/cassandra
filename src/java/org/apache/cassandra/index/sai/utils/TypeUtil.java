@@ -202,6 +202,11 @@ public class TypeUtil
         return type.fromString(value);
     }
 
+    public static ByteComparable asComparableBytes(ByteBuffer value, AbstractType<?> type)
+    {
+        return version -> asComparableBytes(value, type, version);
+    }
+
     public static ByteSource asComparableBytes(ByteBuffer value, AbstractType<?> type, ByteComparable.Version version)
     {
         if (type instanceof InetAddressType || type instanceof IntegerType || type instanceof DecimalType)

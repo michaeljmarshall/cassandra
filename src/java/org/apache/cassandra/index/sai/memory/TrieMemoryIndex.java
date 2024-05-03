@@ -39,7 +39,6 @@ import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
-import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.memtable.TrieMemtable;
 import org.apache.cassandra.db.tries.MemtableTrie;
 import org.apache.cassandra.db.tries.Trie;
@@ -153,7 +152,7 @@ public class TrieMemoryIndex extends MemoryIndex
             public Pair<ByteComparable, PrimaryKeys> next()
             {
                 Map.Entry<ByteComparable, PrimaryKeys> entry = iterator.next();
-                return Pair.create(decode(entry.getKey()), entry.getValue());
+                return Pair.create(unescape(entry.getKey()), entry.getValue());
             }
         };
     }
@@ -217,12 +216,13 @@ public class TrieMemoryIndex extends MemoryIndex
 
         Collector cd = new Collector(keyRange);
         Trie<PrimaryKeys> subtrie = data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive);
-        if (Version.LATEST.onDiskFormat().trieRangeRequiresValueValidation() && expression.validator instanceof CompositeType)
+        if (!Version.LATEST.onOrAfter(Version.DA) && TypeUtil.isComposite(expression.validator))
             subtrie.entrySet().forEach(entry -> {
-                // When stored in memory, the keys of the trie are encoded, so we must decode them before we can
-                // compare them to the expression.
-                ByteComparable decoded = decode(entry.getKey());
-                byte[] key = ByteSourceInverse.readBytes(decoded.asComparableBytes(ByteComparable.Version.OSS41));
+                // Before version DA, we encoded composite types using a non order-preserving function. In order to
+                // perform a range query on a map, we use the bounds to get all entries for a given map key and then
+                // only keep the map entries that satisfy the expression.
+                ByteComparable unescaped = unescape(entry.getKey());
+                byte[] key = ByteSourceInverse.readBytes(unescaped.asComparableBytes(ByteComparable.Version.OSS41));
                 if (expression.isSatisfiedBy(ByteBuffer.wrap(key)))
                     cd.processContent(entry.getValue());
             });
@@ -258,12 +258,12 @@ public class TrieMemoryIndex extends MemoryIndex
 
     private ByteComparable encode(ByteBuffer input)
     {
-        return Version.LATEST.onDiskFormat().encode(input, indexContext);
+        return Version.LATEST.onDiskFormat().encode(input, indexContext.getValidator());
     }
 
-    private ByteComparable decode(ByteComparable term)
+    private ByteComparable unescape(ByteComparable term)
     {
-        return Version.LATEST.onDiskFormat().decode(term, indexContext);
+        return Version.LATEST.onDiskFormat().unescape(term, indexContext.getValidator());
     }
 
     class PrimaryKeysReducer implements MemtableTrie.UpsertTransformer<PrimaryKeys, PrimaryKey>

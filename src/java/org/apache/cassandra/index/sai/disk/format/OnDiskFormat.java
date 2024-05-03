@@ -25,6 +25,7 @@ import java.util.Set;
 
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.lifecycle.LifecycleNewTracker;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
@@ -214,19 +215,18 @@ public interface OnDiskFormat
     public ByteOrder byteOrderFor(IndexComponent component, IndexContext context);
 
     /**
-     * Encode the given input into a {@link ByteComparable} object based on the version and the index context.
-     * @return
+     * Encode the given {@link ByteBuffer} into a {@link ByteComparable} object based on the provided {@link AbstractType}
+     * for storage in an index. This used for both the memory and on disk indexes.
+     * @return The encoded {@link ByteComparable} object
      */
-    public ByteComparable encode(ByteBuffer input, IndexContext context);
+    public ByteComparable encode(ByteBuffer input, AbstractType<?> type);
 
     /**
-     * Decode the given input into a {@link ByteComparable} object based on the version and the index context.
-     * @return
+     * Unespace the given {@link ByteComparable} object based on the provided {@link AbstractType}.
+     * Note: this is only needed for versions AA through CA because we historically unescaped entries before inserting
+     * them into the trie index. See {@link org.apache.cassandra.index.sai.disk.v1.V1OnDiskFormat} for implementation
+     * details. We might be able to remove this in the future.
+     * @return The unescaped {@link ByteComparable} object
      */
-    public ByteComparable decode(ByteComparable term, IndexContext indexContext);
-
-    /**
-     * Whether a trie range result requires validation after reading from the trie.
-     */
-    public boolean trieRangeRequiresValueValidation();
+    public ByteComparable unescape(ByteComparable term, AbstractType<?> type);
 }
