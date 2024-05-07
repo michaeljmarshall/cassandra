@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.PriorityQueue;
 
 import com.google.common.base.MoreObjects;
@@ -52,7 +53,6 @@ import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.v1.postings.VectorPostingList;
 import org.apache.cassandra.index.sai.disk.v2.hnsw.CassandraOnDiskHnsw;
 import org.apache.cassandra.index.sai.disk.vector.BruteForceRowIdIterator;
-import org.apache.cassandra.index.sai.disk.vector.CloseableReranker;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
 import org.apache.cassandra.index.sai.disk.vector.VectorMemtableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
@@ -84,7 +84,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     private static final VectorTypeSupport vts = VectorizationProvider.getInstance().getVectorTypeSupport();
     public static int GLOBAL_BRUTE_FORCE_ROWS = Integer.MAX_VALUE; // not final so test can inject its own setting
 
-    private final JVectorLuceneOnDiskGraph graph;
+    protected final JVectorLuceneOnDiskGraph graph;
     private final PrimaryKey.Factory keyFactory;
     private final PairedSlidingWindowReservoir expectedActualNodesVisited = new PairedSlidingWindowReservoir(20);
     private final ThreadLocal<SparseBits> cachedBits;
@@ -296,7 +296,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
                 approximateScores.add(new BruteForceRowIdIterator.RowWithApproximateScore(segmentRowId, ordinal, score));
             }
         }
-        var reranker = new CloseableReranker(similarityFunction, queryVector, graph.getVectorSupplier());
+        var reranker = new JVectorLuceneOnDiskGraph.CloseableReranker(similarityFunction, queryVector, graph.getVectorSupplier());
         return new BruteForceRowIdIterator(approximateScores, reranker, limit, topK);
     }
 
@@ -581,5 +581,10 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     public void close() throws IOException
     {
         graph.close();
+    }
+
+    public Optional<Boolean> containsUnitVectors()
+    {
+        return Optional.empty();
     }
 }

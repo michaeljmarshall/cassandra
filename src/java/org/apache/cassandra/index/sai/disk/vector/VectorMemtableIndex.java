@@ -94,7 +94,7 @@ public class VectorMemtableIndex implements MemtableIndex
     public VectorMemtableIndex(IndexContext indexContext, Memtable mt)
     {
         this.indexContext = indexContext;
-        this.graph = new CassandraOnHeapGraph<>(indexContext.getValidator(), indexContext.getIndexWriterConfig(), true);
+        this.graph = new CassandraOnHeapGraph<>(indexContext, true);
         this.mt = mt;
     }
 
@@ -124,7 +124,7 @@ public class VectorMemtableIndex implements MemtableIndex
 
         writeCount.increment();
         primaryKeys.add(primaryKey);
-        return graph.add(value, primaryKey, CassandraOnHeapGraph.InvalidVectorBehavior.FAIL);
+        return graph.add(value, primaryKey);
     }
 
     @Override
@@ -155,7 +155,7 @@ public class VectorMemtableIndex implements MemtableIndex
 
             // make the changes in this order so we don't have a window where the row is not in the index at all
             if (newRemaining > 0)
-                graph.add(newValue, primaryKey, CassandraOnHeapGraph.InvalidVectorBehavior.FAIL);
+                graph.add(newValue, primaryKey);
             if (oldRemaining > 0)
                 graph.remove(oldValue, primaryKey);
 
@@ -388,9 +388,9 @@ public class VectorMemtableIndex implements MemtableIndex
         return graph.size();
     }
 
-    public SegmentMetadata.ComponentMetadataMap writeData(IndexDescriptor indexDescriptor, IndexContext indexContext, Set<Integer> deletedOrdinals) throws IOException
+    public SegmentMetadata.ComponentMetadataMap writeData(IndexDescriptor indexDescriptor, Set<Integer> deletedOrdinals) throws IOException
     {
-        return graph.writeData(indexDescriptor, indexContext, deletedOrdinals);
+        return graph.flush(indexDescriptor, deletedOrdinals);
     }
 
     @Override

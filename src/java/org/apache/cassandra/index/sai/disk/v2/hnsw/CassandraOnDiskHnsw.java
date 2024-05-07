@@ -39,13 +39,12 @@ import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
-import org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
 import org.apache.cassandra.index.sai.disk.vector.NodeScoreToRowIdWithScoreIterator;
 import org.apache.cassandra.index.sai.disk.vector.OnDiskOrdinalsMap;
 import org.apache.cassandra.index.sai.disk.vector.OrdinalsView;
-import org.apache.cassandra.index.sai.disk.vector.VectorSupplier;
 import org.apache.cassandra.index.sai.utils.RowIdWithScore;
+import org.apache.cassandra.index.sai.disk.vector.VectorValidation;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
@@ -76,12 +75,12 @@ public class CassandraOnDiskHnsw extends JVectorLuceneOnDiskGraph
         similarityFunction = context.getIndexWriterConfig().getSimilarityFunction();
 
         vectorsFile = indexFiles.vectors();
-        long vectorsSegmentOffset = getComponentMetadata(IndexComponent.VECTOR).offset;
+        long vectorsSegmentOffset = this.componentMetadatas.get(IndexComponent.VECTOR).offset;
 
-        SegmentMetadata.ComponentMetadata postingListsMetadata = getComponentMetadata(IndexComponent.POSTING_LISTS);
+        SegmentMetadata.ComponentMetadata postingListsMetadata = this.componentMetadatas.get(IndexComponent.POSTING_LISTS);
         ordinalsMap = new OnDiskOrdinalsMap(indexFiles.postingLists(), postingListsMetadata.offset, postingListsMetadata.length);
 
-        SegmentMetadata.ComponentMetadata termsMetadata = getComponentMetadata(IndexComponent.TERMS_DATA);
+        SegmentMetadata.ComponentMetadata termsMetadata = this.componentMetadatas.get(IndexComponent.TERMS_DATA);
         hnsw = new OnDiskHnswGraph(indexFiles.termsData(), termsMetadata.offset, termsMetadata.length, OFFSET_CACHE_MIN_BYTES);
         vectors = new OnDiskVectors(vectorsFile, vectorsSegmentOffset);
     }
@@ -107,7 +106,7 @@ public class CassandraOnDiskHnsw extends JVectorLuceneOnDiskGraph
         if (threshold > 0)
             throw new InvalidRequestException("Geo queries are not supported for legacy SAI indexes -- drop the index and recreate it to enable these");
 
-        CassandraOnHeapGraph.validateIndexable(queryVector, similarityFunction);
+        VectorValidation.validateIndexable(queryVector, similarityFunction);
 
         NeighborQueue queue;
         try (var view = hnsw.getView(context))
