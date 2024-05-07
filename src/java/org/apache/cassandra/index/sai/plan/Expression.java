@@ -343,6 +343,7 @@ public class Expression
         return getBound(upper, false);
     }
 
+    // This method is needed to satisy range queries for SAI on disk formats aa through ca.
     private ByteBuffer getBound(Bound bound, boolean isLowerBound)
     {
         if (bound == null)

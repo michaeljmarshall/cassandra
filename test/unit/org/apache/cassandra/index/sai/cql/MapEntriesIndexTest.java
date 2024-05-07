@@ -371,7 +371,9 @@ public class MapEntriesIndexTest extends SAITester
 
         // Set a baseline to make sure data is as expected
         assertRows(execute("SELECT partition FROM %s WHERE item_cost['apple'] > 1"),
-                                row(2), row(4));
+                   row(2), row(4));
+        assertRows(execute("SELECT partition FROM %s WHERE item_cost['apple'] > 1 AND item_cost['apple'] < 10"),
+                   row(2));
         assertRows(execute("SELECT partition FROM %s WHERE item_cost['orange'] < 1"),
                    row(1), row(4));
 

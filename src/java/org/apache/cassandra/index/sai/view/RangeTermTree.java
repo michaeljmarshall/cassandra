@@ -21,8 +21,10 @@ package org.apache.cassandra.index.sai.view;
 import java.lang.invoke.MethodHandles;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -31,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.SSTableIndex;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.Interval;
@@ -42,30 +45,45 @@ public class RangeTermTree implements TermTree
 
     protected final ByteBuffer min, max;
     protected final AbstractType<?> comparator;
-    
-    private final IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>> rangeTree;
+    private final Map<Version, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>>> rangeTrees;
 
-    private RangeTermTree(ByteBuffer min, ByteBuffer max, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>> rangeTree, AbstractType<?> comparator)
+    private RangeTermTree(ByteBuffer min, ByteBuffer max, Map<Version, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>>> rangeTrees, AbstractType<?> comparator)
     {
         this.min = min;
         this.max = max;
-        this.rangeTree = rangeTree;
+        this.rangeTrees = rangeTrees;
         this.comparator = comparator;
     }
 
     public Set<SSTableIndex> search(Expression e)
     {
-        ByteBuffer minTerm = e.getOp().isNonEquality() || e.lower == null ? min : e.getLowerBound();
-        ByteBuffer maxTerm = e.getOp().isNonEquality() || e.upper == null ? max : e.getUpperBound();
-
-        return new HashSet<>(rangeTree.search(Interval.create(new Term(minTerm, comparator),
-                                                              new Term(maxTerm, comparator),
-                                                              null)));
+        Set<SSTableIndex> result = new HashSet<>();
+        rangeTrees.forEach((version, rangeTree) -> {
+            // Before DB, range queries on map entries required special encoding.
+            if (Version.DB.onOrAfter(version))
+            {
+                ByteBuffer minTerm = e.lower == null ? min : e.lower.value.encoded;
+                ByteBuffer maxTerm = e.upper == null ? max : e.upper.value.encoded;
+                result.addAll(rangeTree.search(Interval.create(new Term(minTerm, comparator),
+                                                               new Term(maxTerm, comparator),
+                                                               null)));
+            }
+            else
+            {
+                ByteBuffer minTerm = e.lower == null ? min : e.getLowerBound();
+                ByteBuffer maxTerm = e.upper == null ? max : e.getUpperBound();
+                result.addAll(rangeTree.search(Interval.create(new Term(minTerm, comparator),
+                                                               new Term(maxTerm, comparator),
+                                                               null)));
+            }
+        });
+        return result;
     }
 
     static class Builder extends TermTree.Builder
     {
-        final List<Interval<Term, SSTableIndex>> intervals = new ArrayList<>();
+        // Because different indexes can have different encodings, we must track the versions of the indexes
+        final Map<Version, List<Interval<Term, SSTableIndex>>> intervalsByVersion = new HashMap<>();
 
         protected Builder(AbstractType<?> comparator)
         {
@@ -86,12 +104,20 @@ public class RangeTermTree implements TermTree
                                                 index.maxTerm() != null ? comparator.compose(index.maxTerm()) : null);
             }
 
-            intervals.add(interval);
+            intervalsByVersion.compute(index.getVersion(), (__, list) ->
+            {
+                if (list == null)
+                    list = new ArrayList<>();
+                list.add(interval);
+                return list;
+            });
         }
 
         public TermTree build()
         {
-            return new RangeTermTree(min, max, IntervalTree.build(intervals), comparator);
+            Map<Version, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>>> trees = new HashMap<>();
+            intervalsByVersion.forEach((version, intervals) -> trees.put(version, IntervalTree.build(intervals)));
+            return new RangeTermTree(min, max, trees, comparator);
         }
     }
 
