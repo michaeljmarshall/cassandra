@@ -267,12 +267,14 @@ public class TypeUtil
     {
         if (isInetAddress(type))
             return compareInet(b1, b2);
+        // TODO when I remove isCompositeOrFrozen from this conditional, some failing tests pass. What
+        // additional test coverage do I need to validate this? Is it still valid for big int and decimal?
         // BigInteger values, frozen types and composite types (map entries) use compareUnsigned to maintain
         // a consistent order between the in-memory index and the on-disk index.
-        else if (isBigInteger(type) || isBigDecimal(type) || isCompositeOrFrozen(type))
+        else if (isBigInteger(type) || isBigDecimal(type))
             return FastByteOperations.compareUnsigned(b1, b2);
 
-        return type.compare(b1, b2 );
+        return type.compare(b1, b2);
     }
 
     /**
@@ -286,8 +288,8 @@ public class TypeUtil
     {
         if (isInetAddress(type))
             return compareInet(requestedValue.encoded, columnValue.encoded);
-        // Override comparisons for frozen collections and composite types (map entries)
-        else if (isCompositeOrFrozen(type))
+        // Override comparisons for frozen collections
+        else if (isFrozen(type))
             return FastByteOperations.compareUnsigned(requestedValue.raw, columnValue.raw);
 
         return type.compare(requestedValue.raw, columnValue.raw);
