@@ -42,18 +42,19 @@ public class Version
     public static final Version BA = new Version("ba", V2OnDiskFormat.instance, (c, i) -> stargazerFileNameFormat(c, i, "ba"));
     // Converged Cassandra with JVector
     public static final Version CA = new Version("ca", V3OnDiskFormat.instance, (c, i) -> stargazerFileNameFormat(c, i, "ca"));
+    // NOTE: use DB to prevent collisions with upstream file formats
     // Encode trie entries using their AbstractType to ensure trie entries are sorted for range queries and are prefix free.
-    public static final Version DA = new Version("da", V4OnDiskFormat.instance, (c, i) -> stargazerFileNameFormat(c, i, "da"));
+    public static final Version DB = new Version("db", V4OnDiskFormat.instance, (c, i) -> stargazerFileNameFormat(c, i, "db"));
 
     // These are in reverse-chronological order so that the latest version is first. Version matching tests
     // are more likely to match the latest version so we want to test that one first.
-    public static final List<Version> ALL = Lists.newArrayList(DA, CA, BA, AA);
+    public static final List<Version> ALL = Lists.newArrayList(DB, CA, BA, AA);
 
     public static final Version EARLIEST = AA;
     public static final Version VECTOR_EARLIEST = BA;
     // The latest version can be configured to be an earlier version to support partial upgrades that don't
     // write newer versions of the on-disk formats.
-    public static final Version LATEST = parse(System.getProperty("cassandra.sai.latest.version", "da"));
+    public static final Version LATEST = parse(System.getProperty("cassandra.sai.latest.version", "db"));
 
     private final String version;
     private final OnDiskFormat onDiskFormat;

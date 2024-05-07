@@ -216,7 +216,7 @@ public class TrieMemoryIndex extends MemoryIndex
 
         Collector cd = new Collector(keyRange);
         Trie<PrimaryKeys> subtrie = data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive);
-        if (!Version.LATEST.onOrAfter(Version.DA) && TypeUtil.isComposite(expression.validator))
+        if (!Version.LATEST.onOrAfter(Version.DB) && TypeUtil.isComposite(expression.validator))
             subtrie.entrySet().forEach(entry -> {
                 // Before version DA, we encoded composite types using a non order-preserving function. In order to
                 // perform a range query on a map, we use the bounds to get all entries for a given map key and then
