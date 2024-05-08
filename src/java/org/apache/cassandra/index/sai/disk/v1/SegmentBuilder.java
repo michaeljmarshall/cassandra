@@ -172,11 +172,9 @@ public abstract class SegmentBuilder
 
         protected long addInternal(ByteBuffer term, int segmentRowId)
         {
-            var bc = version.onDiskFormat().encode(term, termComparator);
-            // We only unescape for legacy reasons. See interface javadoc.
-            var unescaped = version.onDiskFormat().unescape(bc, termComparator);
+            var encodedTerm = version.onDiskFormat().encodeForOnDiskTrie(term, termComparator);
             // VSTODD is it worth estimating the size of the byte array to prevent unnecessary array creation?
-            var bytes = ByteSourceInverse.readBytes(unescaped.asComparableBytes(Walker.BYTE_COMPARABLE_VERSION));
+            var bytes = ByteSourceInverse.readBytes(encodedTerm.asComparableBytes(Walker.BYTE_COMPARABLE_VERSION));
             var bytesRef = new BytesRef(bytes);
             return ramIndexer.add(bytesRef, segmentRowId);
         }

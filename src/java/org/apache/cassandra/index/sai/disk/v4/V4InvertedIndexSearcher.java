@@ -62,7 +62,7 @@ public class V4InvertedIndexSearcher extends InvertedIndexSearcher
 
         if (exp.getOp().isEquality() || exp.getOp() == Expression.Op.MATCH)
         {
-            final ByteComparable term = V4OnDiskFormat.instance.encode(exp.lower.value.encoded, indexContext.getValidator());
+            final ByteComparable term = V4OnDiskFormat.instance.encodeForOnDiskTrie(exp.lower.value.encoded, indexContext.getValidator());
             QueryEventListener.TrieIndexEventListener listener = MulticastQueryEventListeners.of(context, perColumnEventListener);
             return reader.exactMatch(term, listener, context);
         }

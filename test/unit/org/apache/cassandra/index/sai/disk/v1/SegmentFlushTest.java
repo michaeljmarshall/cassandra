@@ -261,9 +261,8 @@ public class SegmentFlushTest
 
     private ByteBuffer encodeUnescapeThenDecode(ByteBuffer original, AbstractType<?> type)
     {
-        var encoded = version.onDiskFormat().encode(original, type);
-        var unescaped = version.onDiskFormat().unescape(encoded, type);
-        return ByteBuffer.wrap(ByteSourceInverse.readBytes(unescaped.asComparableBytes(ByteComparable.Version.OSS41)));
+        var encoded = version.onDiskFormat().encodeForOnDiskTrie(original, type);
+        return ByteBuffer.wrap(ByteSourceInverse.readBytes(encoded.asComparableBytes(ByteComparable.Version.OSS41)));
     }
 
     private void assertOverflow(long sstableRowId1, long sstableRowId2) throws Exception

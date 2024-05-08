@@ -229,4 +229,15 @@ public interface OnDiskFormat
      * @return The unescaped {@link ByteComparable} object
      */
     public ByteComparable unescape(ByteComparable term, AbstractType<?> type);
+
+    /**
+     * Encode a term for use in the on-disk trie index. This is valid for term insertion and for encoding search bounds.
+     * @param input The term to encode
+     * @param type The type of the term
+     * @return The encoded term
+     */
+    default ByteComparable encodeForOnDiskTrie(ByteBuffer input, AbstractType<?> type)
+    {
+        return unescape(encode(input, type), type);
+    }
 }
