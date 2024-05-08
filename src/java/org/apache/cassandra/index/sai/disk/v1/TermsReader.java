@@ -28,12 +28,11 @@ import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.marshal.ByteBufferAccessor;
-import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.TermsIterator;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.io.IndexInput;
 import org.apache.cassandra.index.sai.disk.v1.postings.MergePostingList;
 import org.apache.cassandra.index.sai.disk.v1.postings.PostingsReader;
@@ -43,7 +42,6 @@ import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.AbortedOperationException;
 import org.apache.cassandra.index.sai.utils.IndexFileUtils;
-import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.Pair;
@@ -73,14 +71,17 @@ public class TermsReader implements Closeable
     private final FileHandle termDictionaryFile;
     private final FileHandle postingsFile;
     private final long termDictionaryRoot;
+    private final Version version;
 
     public TermsReader(IndexContext indexContext,
                        FileHandle termsData,
                        FileHandle postingLists,
                        long root,
-                       long termsFooterPointer) throws IOException
+                       long termsFooterPointer,
+                       Version version) throws IOException
     {
         this.indexContext = indexContext;
+        this.version = version;
         termDictionaryFile = termsData;
         postingsFile = postingLists;
         termDictionaryRoot = root;
@@ -122,7 +123,7 @@ public class TermsReader implements Closeable
     public TermsIterator allTerms(long segmentOffset)
     {
         // blocking, since we use it only for segment merging for now
-        return new TermsScanner(segmentOffset);
+        return new TermsScanner(segmentOffset, version);
     }
 
     public PostingList exactMatch(ByteComparable term, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
@@ -388,11 +389,21 @@ public class TermsReader implements Closeable
         private final ByteBuffer minTerm, maxTerm;
         private Pair<ByteComparable, Long> entry;
 
-        private TermsScanner(long segmentOffset)
+        private TermsScanner(long segmentOffset, Version version)
         {
             this.termsDictionaryReader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot);
-            this.minTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMinTerm().asComparableBytes(ByteComparable.Version.OSS41)));
-            this.maxTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMaxTerm().asComparableBytes(ByteComparable.Version.OSS41)));
+            if (version.onOrAfter(Version.DB))
+            {
+                // TODO does this actually work for strings if we encode them with the terminator?
+                // follow up, do we need the terminator?
+                this.minTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMinTerm().asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
+                this.maxTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMaxTerm().asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
+            }
+            else
+            {
+                this.minTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMinTerm().asComparableBytes(ByteComparable.Version.OSS41)));
+                this.maxTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMaxTerm().asComparableBytes(ByteComparable.Version.OSS41)));
+            }
             this.segmentOffset = segmentOffset;
         }
 

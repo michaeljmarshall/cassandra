@@ -45,6 +45,7 @@ import org.apache.cassandra.db.marshal.VectorType;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.ComplexColumnData;
 import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.serializers.MarshalException;
@@ -271,7 +272,7 @@ public class TypeUtil
         // additional test coverage do I need to validate this? Is it still valid for big int and decimal?
         // BigInteger values, frozen types and composite types (map entries) use compareUnsigned to maintain
         // a consistent order between the in-memory index and the on-disk index.
-        else if (isBigInteger(type) || isBigDecimal(type))
+        else if (isBigInteger(type) || isBigDecimal(type) || (isCompositeOrFrozen(type) && !Version.LATEST.onOrAfter(Version.DB)))
             return FastByteOperations.compareUnsigned(b1, b2);
 
         return type.compare(b1, b2);

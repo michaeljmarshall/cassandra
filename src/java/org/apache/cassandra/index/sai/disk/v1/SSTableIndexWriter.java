@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
@@ -63,16 +64,18 @@ public class SSTableIndexWriter implements PerIndexWriter
 
     // segment writer
     private SegmentBuilder currentBuilder;
+    private final Version version;
     private final List<SegmentMetadata> segments = new ArrayList<>();
     private long maxSSTableRowId;
 
-    public SSTableIndexWriter(IndexDescriptor indexDescriptor, IndexContext indexContext, NamedMemoryLimiter limiter, BooleanSupplier isIndexValid)
+    public SSTableIndexWriter(IndexDescriptor indexDescriptor, IndexContext indexContext, NamedMemoryLimiter limiter, BooleanSupplier isIndexValid, Version version)
     {
         this.indexDescriptor = indexDescriptor;
         this.indexContext = indexContext;
         this.analyzer = indexContext.getAnalyzerFactory().create();
         this.limiter = limiter;
         this.isIndexValid = isIndexValid;
+        this.version = version;
     }
 
     @Override
@@ -320,11 +323,11 @@ public class SSTableIndexWriter implements PerIndexWriter
         SegmentBuilder builder;
 
         if (indexContext.isVector())
-            builder = new SegmentBuilder.VectorSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig());
+            builder = new SegmentBuilder.VectorSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig(), version);
         else if (indexContext.isLiteral())
-            builder = new SegmentBuilder.RAMStringSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter);
+            builder = new SegmentBuilder.RAMStringSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, version);
         else
-            builder = new SegmentBuilder.KDTreeSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig());
+            builder = new SegmentBuilder.KDTreeSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig(), version);
 
         long globalBytesUsed = limiter.increment(builder.totalBytesAllocated());
         logger.debug(indexContext.logMessage("Created new segment builder while flushing SSTable {}. Global segment memory usage now at {}."),

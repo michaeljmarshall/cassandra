@@ -27,7 +27,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.PartitionPosition;
-import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
@@ -35,6 +34,7 @@ import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.metrics.MulticastQueryEventListeners;
 import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
@@ -56,7 +56,8 @@ public class InvertedIndexSearcher extends IndexSearcher
                                     PerIndexFiles perIndexFiles,
                                     SegmentMetadata segmentMetadata,
                                     IndexDescriptor indexDescriptor,
-                                    IndexContext indexContext) throws IOException
+                                    IndexContext indexContext,
+                                    Version version) throws IOException
     {
         super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext);
 
@@ -72,7 +73,9 @@ public class InvertedIndexSearcher extends IndexSearcher
         reader = new TermsReader(indexContext,
                                  indexFiles.termsData(),
                                  indexFiles.postingLists(),
-                                 root, footerPointer);
+                                 root,
+                                 footerPointer,
+                                 version);
     }
 
     @Override

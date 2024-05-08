@@ -43,14 +43,12 @@ public class RangeTermTree implements TermTree
 {
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-    protected final ByteBuffer min, max;
     protected final AbstractType<?> comparator;
+    // Because each version can have different encodings, we group indexes by version.
     private final Map<Version, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>>> rangeTrees;
 
-    private RangeTermTree(ByteBuffer min, ByteBuffer max, Map<Version, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>>> rangeTrees, AbstractType<?> comparator)
+    private RangeTermTree(Map<Version, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>>> rangeTrees, AbstractType<?> comparator)
     {
-        this.min = min;
-        this.max = max;
         this.rangeTrees = rangeTrees;
         this.comparator = comparator;
     }
@@ -59,23 +57,19 @@ public class RangeTermTree implements TermTree
     {
         Set<SSTableIndex> result = new HashSet<>();
         rangeTrees.forEach((version, rangeTree) -> {
+            Term minTerm, maxTerm;
             // Before DB, range queries on map entries required special encoding.
             if (Version.DB.onOrAfter(version))
             {
-                ByteBuffer minTerm = e.lower == null ? min : e.lower.value.encoded;
-                ByteBuffer maxTerm = e.upper == null ? max : e.upper.value.encoded;
-                result.addAll(rangeTree.search(Interval.create(new Term(minTerm, comparator),
-                                                               new Term(maxTerm, comparator),
-                                                               null)));
+                minTerm = e.lower == null ? rangeTree.min() : new Term(e.lower.value.encoded, comparator);
+                maxTerm = e.upper == null ? rangeTree.max() : new Term(e.upper.value.encoded, comparator);
             }
             else
             {
-                ByteBuffer minTerm = e.lower == null ? min : e.getLowerBound();
-                ByteBuffer maxTerm = e.upper == null ? max : e.getUpperBound();
-                result.addAll(rangeTree.search(Interval.create(new Term(minTerm, comparator),
-                                                               new Term(maxTerm, comparator),
-                                                               null)));
+                minTerm = e.lower == null ? rangeTree.min() : new Term(e.getLowerBound(), comparator);
+                maxTerm = e.upper == null ? rangeTree.max() : new Term(e.getUpperBound(), comparator);
             }
+            result.addAll(rangeTree.search(Interval.create(minTerm, maxTerm, null)));
         });
         return result;
     }
@@ -98,10 +92,11 @@ public class RangeTermTree implements TermTree
             if (logger.isTraceEnabled())
             {
                 IndexContext context = index.getIndexContext();
-                logger.trace(context.logMessage("Adding index for SSTable {} with minTerm={} and maxTerm={}..."), 
+                logger.trace(context.logMessage("Adding index for SSTable {} with minTerm={} and maxTerm={} and version={}..."),
                                                 index.getSSTable().descriptor, 
                                                 index.minTerm() != null ? comparator.compose(index.minTerm()) : null,
-                                                index.maxTerm() != null ? comparator.compose(index.maxTerm()) : null);
+                                                index.maxTerm() != null ? comparator.compose(index.maxTerm()) : null,
+                                                index.getVersion());
             }
 
             intervalsByVersion.compute(index.getVersion(), (__, list) ->
@@ -117,7 +112,7 @@ public class RangeTermTree implements TermTree
         {
             Map<Version, IntervalTree<Term, SSTableIndex, Interval<Term, SSTableIndex>>> trees = new HashMap<>();
             intervalsByVersion.forEach((version, intervals) -> trees.put(version, IntervalTree.build(intervals)));
-            return new RangeTermTree(min, max, trees, comparator);
+            return new RangeTermTree(trees, comparator);
         }
     }
 

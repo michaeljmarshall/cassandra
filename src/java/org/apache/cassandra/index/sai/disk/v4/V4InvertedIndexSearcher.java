@@ -31,6 +31,7 @@ import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.v1.InvertedIndexSearcher;
 import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
@@ -50,7 +51,7 @@ public class V4InvertedIndexSearcher extends InvertedIndexSearcher
                             IndexDescriptor indexDescriptor,
                             IndexContext indexContext) throws IOException
     {
-        super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext);
+        super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext, Version.DB);
     }
 
     @Override
