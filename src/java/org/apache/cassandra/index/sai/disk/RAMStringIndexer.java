@@ -81,6 +81,7 @@ public class RAMStringIndexer
             @Override
             public ByteBuffer getMinTerm()
             {
+                // todo with my changes, this no longer follows the paradigm of returning non-encoded bytes
                 BytesRef term = new BytesRef();
                 int minTermID = sortedTermIDs[0];
                 termsHash.get(minTermID, term);
@@ -90,6 +91,7 @@ public class RAMStringIndexer
             @Override
             public ByteBuffer getMaxTerm()
             {
+                // todo with my changes, this no longer follows the paradigm of returning non-encoded bytes
                 BytesRef term = new BytesRef();
                 int maxTermID = sortedTermIDs[valueCount-1];
                 termsHash.get(maxTermID, term);

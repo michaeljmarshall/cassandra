@@ -28,6 +28,7 @@ import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
@@ -42,6 +43,7 @@ import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.AbortedOperationException;
 import org.apache.cassandra.index.sai.utils.IndexFileUtils;
+import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.Pair;
@@ -123,7 +125,7 @@ public class TermsReader implements Closeable
     public TermsIterator allTerms(long segmentOffset)
     {
         // blocking, since we use it only for segment merging for now
-        return new TermsScanner(segmentOffset, version);
+        return new TermsScanner(segmentOffset, version, this.indexContext.getValidator());
     }
 
     public PostingList exactMatch(ByteComparable term, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
@@ -389,10 +391,11 @@ public class TermsReader implements Closeable
         private final ByteBuffer minTerm, maxTerm;
         private Pair<ByteComparable, Long> entry;
 
-        private TermsScanner(long segmentOffset, Version version)
+        private TermsScanner(long segmentOffset, Version version, AbstractType<?> type)
         {
             this.termsDictionaryReader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot);
-            if (version.onOrAfter(Version.DB))
+            // TODO if this works, find the right way to encapsulate
+            if (version.onOrAfter(Version.DB) && TypeUtil.isComposite(type))
             {
                 // TODO does this actually work for strings if we encode them with the terminator?
                 // follow up, do we need the terminator?

@@ -323,11 +323,11 @@ public class SSTableIndexWriter implements PerIndexWriter
         SegmentBuilder builder;
 
         if (indexContext.isVector())
-            builder = new SegmentBuilder.VectorSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig(), version);
+            builder = new SegmentBuilder.VectorSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig());
         else if (indexContext.isLiteral())
             builder = new SegmentBuilder.RAMStringSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, version);
         else
-            builder = new SegmentBuilder.KDTreeSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig(), version);
+            builder = new SegmentBuilder.KDTreeSegmentBuilder(rowIdOffset, indexContext.getValidator(), limiter, indexContext.getIndexWriterConfig());
 
         long globalBytesUsed = limiter.increment(builder.totalBytesAllocated());
         logger.debug(indexContext.logMessage("Created new segment builder while flushing SSTable {}. Global segment memory usage now at {}."),

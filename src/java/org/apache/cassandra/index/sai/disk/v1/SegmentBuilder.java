@@ -78,7 +78,6 @@ public abstract class SegmentBuilder
     private static volatile long minimumFlushBytes;
 
     final AbstractType<?> termComparator;
-    final Version version;
 
     // track memory usage for this segment so we can flush when it gets too big
     private final NamedMemoryLimiter limiter;
@@ -114,9 +113,9 @@ public abstract class SegmentBuilder
         private final BKDTreeRamBuffer kdTreeRamBuffer;
         private final IndexWriterConfig indexWriterConfig;
 
-        KDTreeSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter, IndexWriterConfig indexWriterConfig, Version version)
+        KDTreeSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter, IndexWriterConfig indexWriterConfig)
         {
-            super(rowIdOffset, termComparator, limiter, version);
+            super(rowIdOffset, termComparator, limiter);
 
             int typeSize = TypeUtil.fixedSizeOf(termComparator);
             this.kdTreeRamBuffer = new BKDTreeRamBuffer(1, typeSize);
@@ -155,11 +154,12 @@ public abstract class SegmentBuilder
     public static class RAMStringSegmentBuilder extends SegmentBuilder
     {
         final RAMStringIndexer ramIndexer;
+        private final Version version;
 
         RAMStringSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter, Version version)
         {
-            super(rowIdOffset, termComparator, limiter, version);
-
+            super(rowIdOffset, termComparator, limiter);
+            this.version = version;
             ramIndexer = new RAMStringIndexer();
             totalBytesAllocated = ramIndexer.estimatedBytesUsed();
             totalBytesAllocatedConcurrent.add(totalBytesAllocated);
@@ -172,7 +172,12 @@ public abstract class SegmentBuilder
 
         protected long addInternal(ByteBuffer term, int segmentRowId)
         {
-            var bytesRef = new BytesRef(term.array());
+            var bc = version.onDiskFormat().encode(term, termComparator);
+            // We only unescape for legacy reasons. See interface javadoc.
+            var unescaped = version.onDiskFormat().unescape(bc, termComparator);
+            // VSTODD is it worth estimating the size of the byte array to prevent unnecessary array creation?
+            var bytes = ByteSourceInverse.readBytes(unescaped.asComparableBytes(Walker.BYTE_COMPARABLE_VERSION));
+            var bytesRef = new BytesRef(bytes);
             return ramIndexer.add(bytesRef, segmentRowId);
         }
 
@@ -191,9 +196,9 @@ public abstract class SegmentBuilder
     {
         private final CassandraOnHeapGraph<Integer> graphIndex;
 
-        public VectorSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter, IndexWriterConfig indexWriterConfig, Version version)
+        public VectorSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter, IndexWriterConfig indexWriterConfig)
         {
-            super(rowIdOffset, termComparator, limiter, version);
+            super(rowIdOffset, termComparator, limiter);
             graphIndex = new CassandraOnHeapGraph<>(termComparator, indexWriterConfig, false);
             totalBytesAllocated = graphIndex.ramBytesUsed();
             totalBytesAllocatedConcurrent.add(totalBytesAllocated);
@@ -228,10 +233,9 @@ public abstract class SegmentBuilder
         }
     }
 
-    private SegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter, Version version)
+    private SegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter)
     {
         this.termComparator = termComparator;
-        this.version = version;
         this.limiter = limiter;
         this.segmentRowIdOffset = rowIdOffset;
         this.lastValidSegmentRowID = testLastValidSegmentRowId >= 0 ? testLastValidSegmentRowId : LAST_VALID_SEGMENT_ROW_ID;
@@ -271,7 +275,7 @@ public abstract class SegmentBuilder
         return totalSize;
     }
 
-    private long add(ByteBuffer rawTerm, PrimaryKey key, long sstableRowId)
+    private long add(ByteBuffer term, PrimaryKey key, long sstableRowId)
     {
         assert !flushed : "Cannot add to flushed segment.";
         assert sstableRowId >= maxSSTableRowId;
@@ -282,13 +286,7 @@ public abstract class SegmentBuilder
         minKey = minKey == null ? key : minKey;
         maxKey = key;
 
-        // Must compute these now in order to calculate a correct min and max term.
-        var byteComparable = version.onDiskFormat().encode(rawTerm, termComparator);
-        // We only unescape for legacy reasons. See interface javadoc.
-        var unescaped = version.onDiskFormat().unescape(byteComparable, termComparator);
-        // VSTODD is it worth estimating the size of the byte array to prevent unnecessary array creation?
-        var term = ByteBuffer.wrap(ByteSourceInverse.readBytes(unescaped.asComparableBytes(Walker.BYTE_COMPARABLE_VERSION)));
-
+        // These terms are intentionally not encoded. The TypeUtil is an SAI class and is version aware.
         minTerm = TypeUtil.min(term, minTerm, termComparator);
         maxTerm = TypeUtil.max(term, maxTerm, termComparator);
 
