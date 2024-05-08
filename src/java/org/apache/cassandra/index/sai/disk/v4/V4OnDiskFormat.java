@@ -55,16 +55,10 @@ public class V4OnDiskFormat extends V3OnDiskFormat
         //  we want to support?
         // If we don't want range queries on text fields, then it's not necessary because encoding with
         // the type's comparator will prevent weakly prefix free trie encodings that will meet out needs.
-        var bc = TypeUtil.asComparableBytes(input, type);
-        return TypeUtil.isUTF8OrAscii(type)
-               ? version -> ByteSource.appendTerminator(bc.asComparableBytes(version), ByteSource.TERMINATOR)
-               : bc;
+        return TypeUtil.isUTF8OrAscii(type) || TypeUtil.isFrozen(type)
+               ? version -> ByteSource.appendTerminator(ByteSource.of(input, version), ByteSource.TERMINATOR)
+               : TypeUtil.asComparableBytes(input, type);
     }
 
-    @Override
-    public ByteComparable unescape(ByteComparable term, AbstractType<?> type)
-    {
-        // DA (v4) is the first version where we retain the encoding and intentionally do not unescape the term.
-        return term;
-    }
+    // Note: we do not need to override the unescape method because we still unescape all terms that go in the trie.
 }
