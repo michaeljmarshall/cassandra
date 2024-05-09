@@ -39,26 +39,64 @@ import static org.junit.Assert.assertTrue;
 
 public class VectorSiftSmallTest extends VectorTester
 {
+    private static final String DATASET = "siftsmall"; // change to "sift" for larger dataset. requires manual download
+
+    @Override
+    public void setup() throws Throwable
+    {
+        super.setup();
+    }
+
     @Test
     public void testSiftSmall() throws Throwable
     {
-        var siftName = "siftsmall";
-        var baseVectors = readFvecs(String.format("test/data/%s/%s_base.fvecs", siftName, siftName));
-        var queryVectors = readFvecs(String.format("test/data/%s/%s_query.fvecs", siftName, siftName));
-        var groundTruth = readIvecs(String.format("test/data/%s/%s_groundtruth.ivecs", siftName, siftName));
+        var baseVectors = readFvecs(String.format("test/data/%s/%s_base.fvecs", DATASET, DATASET));
+        var queryVectors = readFvecs(String.format("test/data/%s/%s_query.fvecs", DATASET, DATASET));
+        var groundTruth = readIvecs(String.format("test/data/%s/%s_groundtruth.ivecs", DATASET, DATASET));
 
         // Create table and index
-        createTable("CREATE TABLE %s (pk int, val vector<float, 128>, PRIMARY KEY(pk))");
-        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
+        createTable(KEYSPACE, "CREATE TABLE %s (pk int, val vector<float, 128>, PRIMARY KEY(pk))");
+        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex' WITH OPTIONS = {'similarity_function' : 'euclidean'}");
         waitForIndexQueryable();
 
-        insertVectors(baseVectors);
+        insertVectors(baseVectors, 0);
         double memoryRecall = testRecall(queryVectors, groundTruth);
         assertTrue("Memory recall is " + memoryRecall, memoryRecall > 0.975);
 
         flush();
         var diskRecall = testRecall(queryVectors, groundTruth);
         assertTrue("Disk recall is " + diskRecall, diskRecall > 0.975);
+    }
+
+    @Test
+    public void testCompaction() throws Throwable
+    {
+        var baseVectors = readFvecs(String.format("test/data/%s/%s_base.fvecs", DATASET, DATASET));
+        var queryVectors = readFvecs(String.format("test/data/%s/%s_query.fvecs", DATASET, DATASET));
+        var groundTruth = readIvecs(String.format("test/data/%s/%s_groundtruth.ivecs", DATASET, DATASET));
+
+        // Create table and index
+        createTable(KEYSPACE, "CREATE TABLE %s (pk int, val vector<float, 128>, PRIMARY KEY(pk))");
+        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex' WITH OPTIONS = {'similarity_function' : 'euclidean'}");
+        waitForIndexQueryable();
+
+        // we're going to compact manually, so disable background compactions to avoid interference
+        disableCompaction();
+
+        int segments = 5;
+        int vectorsPerSegment = baseVectors.size() / segments;
+        assert baseVectors.size() % vectorsPerSegment == 0; // simplifies split logic
+        for (int i = 0; i < segments; i++)
+        {
+            insertVectors(baseVectors.subList(i * vectorsPerSegment, (i + 1) * vectorsPerSegment), i * vectorsPerSegment);
+            flush();
+        }
+        double memoryRecall = testRecall(queryVectors, groundTruth);
+        assertTrue("Pre-compaction recall is " + memoryRecall, memoryRecall > 0.975);
+
+        compact();
+        var diskRecall = testRecall(queryVectors, groundTruth);
+        assertTrue("Post-compaction recall is " + diskRecall, diskRecall > 0.975);
     }
 
     public static ArrayList<float[]> readFvecs(String filePath) throws IOException
@@ -138,13 +176,12 @@ public class VectorSiftSmallTest extends VectorTester
         return (double) topKfound.get() / (queryVectors.size() * topK);
     }
 
-    private void insertVectors(List<float[]> baseVectors)
+    private void insertVectors(List<float[]> vectors, int baseRowId)
     {
-        IntStream.range(0, baseVectors.size()).parallel().forEach(i -> {
-            float[] arrayVector = baseVectors.get(i);
-            String vectorAsString = Arrays.toString(arrayVector);
+        IntStream.range(0, vectors.size()).parallel().forEach(i -> {
+            float[] arrayVector = vectors.get(i);
             try {
-                execute("INSERT INTO %s " + String.format("(pk, val) VALUES (%d, %s)", i, vectorAsString));
+                execute("INSERT INTO %s (pk, val) VALUES (?, ?)", baseRowId + i, vector(arrayVector));
             } catch (Throwable throwable) {
                 throw new RuntimeException(throwable);
             }

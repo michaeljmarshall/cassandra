@@ -39,25 +39,26 @@ import io.github.jbellis.jvector.util.Bits;
 import io.github.jbellis.jvector.util.ExplicitThreadLocal;
 import io.github.jbellis.jvector.vector.VectorSimilarityFunction;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
-import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.vector.AutoResumingNodeScoreIterator;
-import org.apache.cassandra.index.sai.disk.vector.NodeScoreToScoredRowIdIterator;
-import org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph;
+import org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph.PQVersion;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
+import org.apache.cassandra.index.sai.disk.vector.NodeScoreToScoredRowIdIterator;
 import org.apache.cassandra.index.sai.disk.vector.OnDiskOrdinalsMap;
 import org.apache.cassandra.index.sai.disk.vector.OrdinalsView;
 import org.apache.cassandra.index.sai.disk.vector.ScoredRowId;
 import org.apache.cassandra.index.sai.disk.vector.VectorCompression;
-import org.apache.cassandra.index.sai.disk.vector.VectorSupplier;
+import org.apache.cassandra.index.sai.disk.vector.VectorValidation;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.CloseableIterator;
+
+import static java.lang.Math.min;
 
 public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
 {
@@ -67,11 +68,11 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
 
     private final FileHandle graphHandle;
     private final OnDiskOrdinalsMap ordinalsMap;
-    private volatile GraphIndex graph;
+    private volatile CachingGraphIndex graph;
     private final VectorSimilarityFunction similarityFunction;
     @Nullable
     private final CompressedVectors compressedVectors;
-    private final boolean pqUnitVectors;
+    final boolean pqUnitVectors;
 
     private final ExplicitThreadLocal<GraphSearcher> searchers;
 
@@ -81,19 +82,20 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
 
         similarityFunction = context.getIndexWriterConfig().getSimilarityFunction();
 
-        SegmentMetadata.ComponentMetadata termsMetadata = getComponentMetadata(IndexComponent.TERMS_DATA);
+        SegmentMetadata.ComponentMetadata termsMetadata = this.componentMetadatas.get(IndexComponent.TERMS_DATA);
         graphHandle = indexFiles.termsData();
-        graph = OnDiskGraphIndex.load(graphHandle::createReader, termsMetadata.offset);
+        var rawGraph = OnDiskGraphIndex.load(graphHandle::createReader, termsMetadata.offset);
+        graph = cachingGraphFor(rawGraph);
 
-        long pqSegmentOffset = getComponentMetadata(IndexComponent.PQ).offset;
+        long pqSegmentOffset = this.componentMetadatas.get(IndexComponent.PQ).offset;
         try (var pqFile = indexFiles.pq();
              var reader = pqFile.createReader())
         {
             reader.seek(pqSegmentOffset);
-            int version = 0;
+            var version = PQVersion.V0;
             if (reader.readInt() == PQ_MAGIC) {
-                version = reader.readInt();
-                assert version >= 1 : version;
+                version = PQVersion.values()[reader.readInt()];
+                assert PQVersion.V1.compareTo(version) >= 0 : String.format("Old PQ version %s written with PQ_MAGIC!?", version);
                 pqUnitVectors = reader.readBoolean();
             } else {
                 pqUnitVectors = true;
@@ -108,10 +110,25 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
                 compressedVectors = null;
         }
 
-        SegmentMetadata.ComponentMetadata postingListsMetadata = getComponentMetadata(IndexComponent.POSTING_LISTS);
+        SegmentMetadata.ComponentMetadata postingListsMetadata = this.componentMetadatas.get(IndexComponent.POSTING_LISTS);
         ordinalsMap = new OnDiskOrdinalsMap(indexFiles.postingLists(), postingListsMetadata.offset, postingListsMetadata.length);
 
         searchers = ExplicitThreadLocal.withInitial(() -> new GraphSearcher(graph));
+    }
+
+    private CachingGraphIndex cachingGraphFor(OnDiskGraphIndex rawGraph)
+    {
+        // cache edges around the entry point
+        // we can easily hold 1% of the edges in memory for typical index sizes, but
+        // there is a lot of redundancy in the nodes we observe in practice around the entry point
+        // (only 10%-20% are unique), so use 5% as our target.
+        //
+        // 32**3 = 32k, which would be 4MB if all the nodes are unique, so 3 levels deep is a safe upper bound
+        int distance = min(logBaseX(0.05d * rawGraph.size(), rawGraph.maxDegree()), 3);
+        var result = new CachingGraphIndex(rawGraph, distance);
+        logger.debug("Cached {}@{} to distance {} in {}B",
+                     this, graphHandle.path(), distance, result.ramBytesUsed());
+        return result;
     }
 
     private static int logBaseX(double val, double base) {
@@ -123,7 +140,7 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
     @Override
     public long ramBytesUsed()
     {
-        return graph instanceof CachingGraphIndex ? ((CachingGraphIndex) graph).ramBytesUsed() : Long.BYTES * 4;
+        return graph instanceof CachingGraphIndex ? graph.ramBytesUsed() : Long.BYTES * 4;
     }
 
     @Override
@@ -134,23 +151,25 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
 
     /**
      * @param queryVector the query vector
-     * @param topK the number of results to look for in the index (>= limit)
+     * @param limit the number of results to look for in the index (>= limit)
+     * @param rerankK the number of results to look for in the index (>= limit)
      * @param threshold the minimum similarity score to accept
      * @param acceptBits a Bits indicating which row IDs are acceptable, or null if no constraints
      * @param context unused (vestige from HNSW, retained in signature to allow calling both easily)
      * @param nodesVisitedConsumer a consumer that will be called with the number of nodes visited during the search
-     * @return Row IDs associated with the topK vectors near the query. If a threshold is specified, only vectors with
-     * a similarity score >= threshold will be returned.
+     * @return Iterator of Row IDs associated with the vectors near the query. If a threshold is specified, only vectors
+     * with a similarity score >= threshold will be returned.
      */
     @Override
     public CloseableIterator<ScoredRowId> search(VectorFloat<?> queryVector,
-                                                 int topK,
+                                                 int limit,
+                                                 int rerankK,
                                                  float threshold,
                                                  Bits acceptBits,
                                                  QueryContext context,
                                                  IntConsumer nodesVisitedConsumer)
     {
-        CassandraOnHeapGraph.validateIndexable(queryVector, similarityFunction);
+        VectorValidation.validateIndexable(queryVector, similarityFunction);
 
         var searcher = searchers.get();
         var view = (GraphIndex.ScoringView) searcher.getView();
@@ -170,7 +189,9 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
             var rr = view.rerankerFor(queryVector, sf);
             ssp = new SearchScoreProvider(asf, rr);
         }
-        var result = searcher.search(ssp, topK, threshold, ordinalsMap.ignoringDeleted(acceptBits));
+        var result = searcher.search(ssp, limit, rerankK, threshold, context.getAnnRerankFloor(), ordinalsMap.ignoringDeleted(acceptBits));
+        if (V3OnDiskFormat.ENABLE_RERANK_FLOOR)
+            context.updateAnnRerankFloor(result.getWorstApproximateScoreInTopK());
         Tracing.trace("DiskANN search visited {} nodes to return {} results", result.getVisitedCount(), result.getNodes().length);
         // Threshold based searches are comprehensive and do not need to resume the search.
         if (threshold > 0)
@@ -181,7 +202,7 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
         }
         else
         {
-            var nodeScores = new AutoResumingNodeScoreIterator(searcher, result, nodesVisitedConsumer, topK, false);
+            var nodeScores = new AutoResumingNodeScoreIterator(searcher, result, nodesVisitedConsumer, limit, rerankK, false);
             return new NodeScoreToScoredRowIdIterator(nodeScores, ordinalsMap.getRowIdsView());
         }
     }
@@ -196,7 +217,7 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
     public void close() throws IOException
     {
         ordinalsMap.close();
-        searchers.close();
+        FileUtils.closeQuietly(searchers);
         graph.close();
         graphHandle.close();
     }
@@ -210,27 +231,7 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
     @Override
     public VectorSupplier getVectorSupplier()
     {
-        return new ANNVectorSupplier(getView());
-    }
-
-    private GraphIndex.ScoringView getView()
-    {
-        // asynchronously cache the most-accessed parts of the graph
-        if (!(graph instanceof CachingGraphIndex))
-        {
-            Stage.IO.executor().execute(() -> {
-                synchronized (this)
-                {
-                    if (graph instanceof CachingGraphIndex)
-                        return;
-                    // target 1% of the vectors with a max distance of 3
-                    int distance = Math.min(logBaseX(0.01d * graph.size(), graph.maxDegree()), 3);
-                    logger.debug("Caching {}@{} to distance {}", this, graphHandle.path(), distance);
-                    graph = new CachingGraphIndex((OnDiskGraphIndex) graph, distance);
-                }
-            });
-        }
-        return (GraphIndex.ScoringView) graph.getView();
+        return new ANNVectorSupplier(graph.getView());
     }
 
     private static class ANNVectorSupplier implements VectorSupplier

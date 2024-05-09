@@ -180,7 +180,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     public PerIndexWriter newPerIndexWriter(StorageAttachedIndex index,
                                             IndexDescriptor indexDescriptor,
                                             LifecycleNewTracker tracker,
-                                            RowMapping rowMapping)
+                                            RowMapping rowMapping, long keyCount)
     {
         // If we're not flushing or we haven't yet started the initialization build, flush from SSTable contents.
         if (tracker.opType() != OperationType.FLUSH || !index.canFlushFromMemtableIndex())
@@ -189,7 +189,7 @@ public class V1OnDiskFormat implements OnDiskFormat
             logger.debug(index.getIndexContext().logMessage("Starting a compaction index build. Global segment memory usage: {}"),
                          prettyPrintMemory(limiter.currentBytesUsed()));
 
-            return new SSTableIndexWriter(indexDescriptor, index.getIndexContext(), limiter, index.isIndexValid(), Version.LATEST);
+            return new SSTableIndexWriter(indexDescriptor, index.getIndexContext(), limiter, index.isIndexValid(), keyCount, Version.LATEST);
         }
 
         return new MemtableIndexWriter(index.getIndexContext().getPendingMemtableIndex(tracker),
