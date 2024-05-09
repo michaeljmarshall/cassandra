@@ -50,14 +50,6 @@ public class GenericOrderByInvalidQueryTest extends SAITester
     }
 
     @Test
-    public void cannotOrderDateColumn() throws Throwable
-    {
-        createTable("CREATE TABLE %s (pk int primary key, val date)");
-        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
-        executeOrderByAndAssertInvalidRequestException("date");
-    }
-
-    @Test
     public void cannotOrderVarintColumn() throws Throwable
     {
         createTable("CREATE TABLE %s (pk int primary key, val varint)");

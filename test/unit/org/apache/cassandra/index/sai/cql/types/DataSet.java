@@ -533,14 +533,22 @@ public abstract class DataSet<T> extends CQLTester
             }
         }
 
-        // SimpleDateSerializer currently writes signed integers as unsigned, and therefore the values are not sorted
-        // correctly, so sorting dates is not available at this time.
-        // NOTE: becuase Date maps to integer, we technically allow range queries, but they will fail for any range
-        // that crosses the 0 boundary because of the way they are serialized.
         @Override
         public QuerySet querySet()
         {
-            return new QuerySet.LiteralQuerySet(this, false);
+            Comparator<Object[]> comp = Comparator.comparing(o -> o[2], this::compareDateInts);
+            return new QuerySet.LiteralQuerySet(this, comp);
+        }
+
+        private int compareDateInts(Object left, Object right)
+        {
+            int leftInt = (int) left;
+            int rightInt = (int) right;
+            // Dates are stored as unsigned ints, so we need to shift before comparing.
+            // Note that when inserting the values above as integers, they are interpreted as
+            // the already shifted values, not as a date, which is why shifting is required.
+            // We add Integer.MIN_VALUE to shift the values back to their original form.
+            return Integer.compare((leftInt + Integer.MIN_VALUE), (rightInt + Integer.MIN_VALUE));
         }
 
         public String toString()
