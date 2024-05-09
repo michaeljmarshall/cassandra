@@ -370,6 +370,9 @@ public class Expression
     private ByteComparable getBoundByteComparable(ByteBuffer unencodedBound, Version version, boolean inMemory, int terminator)
     {
         if (TypeUtil.isComposite(validator) && version.onOrAfter(Version.DB))
+            // Note that for ranges that have one unrestricted bound, we technically do not need the terminator
+            // because we use the 0 or the 1 at the end of the first component as the bound. However, it works
+            // with the terminator, so we use it for simplicity.
             return TypeUtil.asComparableBytes(unencodedBound, terminator, (CompositeType) validator);
         else if (inMemory)
             return version.onDiskFormat().encodeForInMemoryTrie(unencodedBound, validator);
@@ -395,7 +398,7 @@ public class Expression
         // Before DB, we need to extract the first component of the composite type to use as the trie search prefix.
         // After DB, we can use the encoded value directly because the trie is encoded in order so the range
         // correctly gets all relevant values.
-        if (version.onOrAfter(Version.DB) && validator instanceof CompositeType)
+        if (!version.onOrAfter(Version.DB) && validator instanceof CompositeType)
             return CompositeType.extractFirstComponentAsTrieSearchPrefix(bound.value.encoded, isLowerBound);
         return bound.value.encoded;
     }

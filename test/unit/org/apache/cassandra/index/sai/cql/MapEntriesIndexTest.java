@@ -346,14 +346,16 @@ public class MapEntriesIndexTest extends SAITester
         createIndex("CREATE CUSTOM INDEX ON %s(entries(item_cost)) USING 'StorageAttachedIndex'");
         waitForIndexQueryable();
 
-        execute("INSERT INTO %s (partition, item_cost) VALUES (1, {'apple': 'ab0', 'orange': '2'})");
+        execute("INSERT INTO %s (partition, item_cost) VALUES (1, {'apple': '', 'orange': '2'})");
         execute("INSERT INTO %s (partition, item_cost) VALUES (4, {'apple': 'a', 'orange': '2'})");
         flush();
         execute("INSERT INTO %s (partition, item_cost) VALUES (2, {'apple': 'abv', 'orange': '1'})");
         execute("INSERT INTO %s (partition, item_cost) VALUES (3, {'apple': 'z', 'orange': '3'})");
 
         assertRowsIgnoringOrder(execute("SELECT partition FROM %s WHERE item_cost['apple'] > 'a'"),
-                                row(1), row(2), row(3));
+                                row(2), row(3));
+        assertRowsIgnoringOrder(execute("SELECT partition FROM %s WHERE item_cost['apple'] < 'a'"),
+                                row(1));
     }
 
     @Test

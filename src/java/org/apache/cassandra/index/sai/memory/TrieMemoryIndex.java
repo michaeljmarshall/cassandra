@@ -205,7 +205,7 @@ public class TrieMemoryIndex extends MemoryIndex
 
         if (expression.upper != null)
         {
-            upperBound = expression.getEncodedUpperBoundByteComparable(Version.LATEST, false);
+            upperBound = expression.getEncodedUpperBoundByteComparable(Version.LATEST, true);
             upperInclusive = expression.upper.inclusive;
         }
         else

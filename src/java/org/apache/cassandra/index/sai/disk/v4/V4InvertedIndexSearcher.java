@@ -19,30 +19,14 @@
 package org.apache.cassandra.index.sai.disk.v4;
 
 import java.io.IOException;
-import java.lang.invoke.MethodHandles;
-import java.util.Arrays;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.cassandra.db.marshal.ByteBufferAccessor;
-import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.index.sai.IndexContext;
-import org.apache.cassandra.index.sai.QueryContext;
-import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.v1.InvertedIndexSearcher;
 import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
-import org.apache.cassandra.index.sai.metrics.MulticastQueryEventListeners;
-import org.apache.cassandra.index.sai.metrics.QueryEventListener;
-import org.apache.cassandra.index.sai.plan.Expression;
-import org.apache.cassandra.io.IVersionedSerializer;
-import org.apache.cassandra.utils.bytecomparable.ByteComparable;
-import org.apache.cassandra.utils.bytecomparable.ByteSource;
-import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 
 /**
  * The key override for this class is the use of {@link Version#DB}, which allows us to skip filtering range results.
