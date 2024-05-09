@@ -268,11 +268,7 @@ public class TypeUtil
     {
         if (isInetAddress(type))
             return compareInet(b1, b2);
-        // TODO when I remove isCompositeOrFrozen from this conditional, some failing tests pass. What
-        // additional test coverage do I need to validate this? Is it still valid for big int and decimal?
-        // BigInteger values, frozen types and composite types (map entries) use compareUnsigned to maintain
-        // a consistent order between the in-memory index and the on-disk index.
-        else if (isBigInteger(type) || isBigDecimal(type) || isFrozen(type) || (isComposite(type) && !Version.LATEST.onOrAfter(Version.DB)))
+        else if (useFaseByteOperations(type))
             return FastByteOperations.compareUnsigned(b1, b2);
 
         return type.compare(b1, b2);
@@ -316,11 +312,24 @@ public class TypeUtil
 
     public static Comparator<ByteBuffer> comparator(AbstractType<?> type)
     {
-        // Override the comparator for BigInteger, frozen collections and composite types
-        if (isBigInteger(type) || isBigDecimal(type) || isFrozen(type) || (isComposite(type) && !Version.LATEST.onOrAfter(Version.DB)))
+        // Override the comparator for BigInteger, frozen collections (not including composite types) and
+        // composite types before DB version to maintain a consistent order between the in-memory index and the on-disk index.
+        if (useFaseByteOperations(type))
             return FastByteOperations::compareUnsigned;
 
         return type;
+    }
+
+    private static boolean useFaseByteOperations(AbstractType<?> type)
+    {
+        // TODO when I remove isCompositeOrFrozen from this conditional, some failing tests pass. What
+        // additional test coverage do I need to validate this? Is it still valid for big int and decimal?
+        // BigInteger values, frozen types and composite types (map entries) use compareUnsigned to maintain
+        // a consistent order between the in-memory index and the on-disk index.
+        return isBigInteger(type)
+               || isBigDecimal(type)
+               || (!isComposite(type) && isFrozen(type))
+               || (isComposite(type) && !Version.LATEST.onOrAfter(Version.DB));
     }
 
     public static float[] decomposeVector(AbstractType<?> type, ByteBuffer byteBuffer)

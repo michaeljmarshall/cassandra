@@ -31,6 +31,7 @@ import org.apache.cassandra.index.sai.disk.v3.V3OnDiskFormat;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
+import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 
 public class V4OnDiskFormat extends V3OnDiskFormat
 {
@@ -58,6 +59,16 @@ public class V4OnDiskFormat extends V3OnDiskFormat
         return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
                ? version -> ByteSource.appendTerminator(ByteSource.of(input, version), ByteSource.TERMINATOR)
                : TypeUtil.asComparableBytes(input, type);
+    }
+
+    @Override
+    public ByteComparable unescape(ByteComparable term, AbstractType<?> type)
+    {
+        // Composite types are not escaped, so we don't need to unescape them. The ByteSource.of call above
+        // is what requires unescaping.
+        return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
+               ? v -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(v)))
+               : term;
     }
 
     // Note: we do not need to override the unescape method because we still unescape all terms that go in the trie.
