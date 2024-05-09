@@ -27,6 +27,7 @@ import org.junit.Test;
 
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.index.sai.utils.SaiRandomizedTest;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSourceInverse;
 import org.apache.lucene.util.BytesRef;
@@ -50,7 +51,7 @@ public class RAMStringIndexerTest extends SaiRandomizedTest
         matches.add(Arrays.asList(100L, 200L));
         matches.add(Arrays.asList(102L, 202L, 302L));
 
-        try (TermsIterator terms = indexer.getTermsWithPostings())
+        try (TermsIterator terms = indexer.getTermsWithPostings(ByteBufferUtil.bytes("0"), ByteBufferUtil.bytes("2")))
         {
             int ord = 0;
             while (terms.hasNext())
@@ -67,6 +68,9 @@ public class RAMStringIndexerTest extends SaiRandomizedTest
                     assertEquals(matches.get(ord++), results);
                 }
             }
+            // The min and max are configured, not calculated.
+            assertArrayEquals("0".getBytes(), terms.getMinTerm().array());
+            assertArrayEquals("2".getBytes(), terms.getMaxTerm().array());
         }
     }
 
@@ -86,7 +90,7 @@ public class RAMStringIndexerTest extends SaiRandomizedTest
             }
         }
 
-        final TermsIterator terms = indexer.getTermsWithPostings();
+        final TermsIterator terms = indexer.getTermsWithPostings(ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBufferUtil.EMPTY_BYTE_BUFFER);
 
         ByteComparable term;
         long termOrd = 0L;

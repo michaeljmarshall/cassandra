@@ -102,8 +102,8 @@ public abstract class SegmentBuilder
     private PrimaryKey minKey;
     private PrimaryKey maxKey;
     // in termComparator order
-    private ByteBuffer minTerm;
-    private ByteBuffer maxTerm;
+    protected ByteBuffer minTerm;
+    protected ByteBuffer maxTerm;
 
     protected final AtomicInteger updatesInFlight = new AtomicInteger(0);
     protected final QuickSlidingWindowReservoir termSizeReservoir = new QuickSlidingWindowReservoir(100);
@@ -192,7 +192,7 @@ public abstract class SegmentBuilder
             try (InvertedIndexWriter writer = new InvertedIndexWriter(indexDescriptor,
                                                                       indexContext))
             {
-                return writer.writeAll(ramIndexer.getTermsWithPostings());
+                return writer.writeAll(ramIndexer.getTermsWithPostings(minTerm, maxTerm));
             }
         }
     }

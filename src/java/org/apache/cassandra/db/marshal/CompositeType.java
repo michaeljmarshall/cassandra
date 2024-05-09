@@ -225,8 +225,6 @@ public class CompositeType extends AbstractCompositeType
         return asComparableBytes(accessor, data, version, ByteSource.TERMINATOR);
     }
 
-    // TODO What is the right way to make this generic? It seems like it could be generally helpful for creating slices
-    // on tries for all types.
     public <V> ByteSource asComparableBytes(ValueAccessor<V> accessor, V data, Version version, int terminator)
     {
         if (data == null || accessor.isEmpty(data))

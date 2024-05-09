@@ -182,7 +182,7 @@ public class InvertedIndexSearcherTest extends SaiRandomizedTest
                                                                     Long.MAX_VALUE,
                                                                     SAITester.TEST_FACTORY.createTokenOnly(DatabaseDescriptor.getPartitioner().getMinimumToken()),
                                                                     SAITester.TEST_FACTORY.createTokenOnly(DatabaseDescriptor.getPartitioner().getMaximumToken()),
-                                                                    termsEnum.get(0).originalTermBytes, // todo does this work?
+                                                                    termsEnum.get(0).originalTermBytes,
                                                                     termsEnum.get(terms - 1).originalTermBytes,
                                                                     indexMetas);
 

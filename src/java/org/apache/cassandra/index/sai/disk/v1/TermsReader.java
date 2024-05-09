@@ -368,11 +368,8 @@ public class TermsReader implements Closeable
         private TermsScanner(long segmentOffset, Version version, AbstractType<?> type)
         {
             this.termsDictionaryReader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot);
-            // TODO if this works, find the right way to encapsulate
             if (version.onOrAfter(Version.DB) && TypeUtil.isComposite(type))
             {
-                // TODO does this actually work for strings if we encode them with the terminator?
-                // follow up, do we need the terminator?
                 this.minTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMinTerm().asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
                 this.maxTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMaxTerm().asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
             }
