@@ -56,9 +56,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
         //  we want to support?
         // If we don't want range queries on text fields, then it's not necessary because encoding with
         // the type's comparator will prevent weakly prefix free trie encodings that will meet out needs.
-        return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
-               ? version -> ByteSource.appendTerminator(ByteSource.of(input, version), ByteSource.TERMINATOR)
-               : TypeUtil.asComparableBytes(input, type);
+        return TypeUtil.asComparableBytes(input, type);
     }
 
     @Override
@@ -66,9 +64,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     {
         // Composite types are not escaped, so we don't need to unescape them. The ByteSource.of call above
         // is what requires unescaping.
-        return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
-               ? v -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(v)))
-               : term;
+        return term;
     }
 
     // Note: we do not need to override the unescape method because we still unescape all terms that go in the trie.
