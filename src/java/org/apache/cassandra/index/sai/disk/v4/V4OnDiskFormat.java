@@ -55,7 +55,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
         //  we want to support?
         // If we don't want range queries on text fields, then it's not necessary because encoding with
         // the type's comparator will prevent weakly prefix free trie encodings that will meet out needs.
-        return TypeUtil.isUTF8OrAscii(type) || TypeUtil.isFrozen(type)
+        return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
                ? version -> ByteSource.appendTerminator(ByteSource.of(input, version), ByteSource.TERMINATOR)
                : TypeUtil.asComparableBytes(input, type);
     }
