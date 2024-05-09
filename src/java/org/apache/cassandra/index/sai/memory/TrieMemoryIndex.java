@@ -192,9 +192,10 @@ public class TrieMemoryIndex extends MemoryIndex
     {
         ByteComparable lowerBound, upperBound;
         boolean lowerInclusive, upperInclusive;
+        var useLegacyEncoding = !Version.LATEST.onOrAfter(Version.DB) && TypeUtil.isComposite(expression.validator);
         if (expression.lower != null)
         {
-            lowerBound = encode(expression.getLowerBound());
+            lowerBound = encode(useLegacyEncoding ? expression.getLowerBound() : expression.lower.value.encoded);
             lowerInclusive = expression.lower.inclusive;
         }
         else
@@ -205,7 +206,7 @@ public class TrieMemoryIndex extends MemoryIndex
 
         if (expression.upper != null)
         {
-            upperBound = encode(expression.getUpperBound());
+            upperBound = encode(useLegacyEncoding ? expression.getUpperBound() : expression.upper.value.encoded);
             upperInclusive = expression.upper.inclusive;
         }
         else
@@ -216,7 +217,7 @@ public class TrieMemoryIndex extends MemoryIndex
 
         Collector cd = new Collector(keyRange);
         Trie<PrimaryKeys> subtrie = data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive);
-        if (!Version.LATEST.onOrAfter(Version.DB) && TypeUtil.isComposite(expression.validator))
+        if (useLegacyEncoding)
             subtrie.entrySet().forEach(entry -> {
                 // Before version DA, we encoded composite types using a non order-preserving function. In order to
                 // perform a range query on a map, we use the bounds to get all entries for a given map key and then
