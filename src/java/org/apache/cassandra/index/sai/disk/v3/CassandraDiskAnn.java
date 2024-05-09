@@ -46,6 +46,7 @@ import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.vector.AutoResumingNodeScoreIterator;
 import org.apache.cassandra.index.sai.disk.vector.NodeScoreToRowIdWithScoreIterator;
+import org.apache.cassandra.index.sai.disk.vector.CassandraOnHeapGraph.PQVersion;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
 import org.apache.cassandra.index.sai.disk.vector.OnDiskOrdinalsMap;
 import org.apache.cassandra.index.sai.disk.vector.OrdinalsView;
@@ -91,10 +92,10 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
              var reader = pqFile.createReader())
         {
             reader.seek(pqSegmentOffset);
-            int version = 0;
+            var version = PQVersion.V0;
             if (reader.readInt() == PQ_MAGIC) {
-                version = reader.readInt();
-                assert version >= 1 : version;
+                version = PQVersion.values()[reader.readInt()];
+                assert PQVersion.V1.compareTo(version) >= 0 : String.format("Old PQ version %s written with PQ_MAGIC!?", version);
                 pqUnitVectors = reader.readBoolean();
             } else {
                 pqUnitVectors = true;
@@ -150,17 +151,19 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
 
     /**
      * @param queryVector the query vector
-     * @param topK the number of results to look for in the index (>= limit)
+     * @param limit the number of results to look for in the index (>= limit)
+     * @param rerankK the number of results to look for in the index (>= limit)
      * @param threshold the minimum similarity score to accept
      * @param acceptBits a Bits indicating which row IDs are acceptable, or null if no constraints
      * @param context unused (vestige from HNSW, retained in signature to allow calling both easily)
      * @param nodesVisitedConsumer a consumer that will be called with the number of nodes visited during the search
-     * @return Row IDs associated with the topK vectors near the query. If a threshold is specified, only vectors with
-     * a similarity score >= threshold will be returned.
+     * @return Iterator of Row IDs associated with the vectors near the query. If a threshold is specified, only vectors
+     * with a similarity score >= threshold will be returned.
      */
     @Override
     public CloseableIterator<RowIdWithScore> search(VectorFloat<?> queryVector,
-                                                    int topK,
+                                                    int limit,
+                                                    int rerankK,
                                                     float threshold,
                                                     Bits acceptBits,
                                                     QueryContext context,
@@ -186,7 +189,9 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
             var rr = view.rerankerFor(queryVector, sf);
             ssp = new SearchScoreProvider(asf, rr);
         }
-        var result = searcher.search(ssp, topK, threshold, ordinalsMap.ignoringDeleted(acceptBits));
+        var result = searcher.search(ssp, limit, rerankK, threshold, context.getAnnRerankFloor(), ordinalsMap.ignoringDeleted(acceptBits));
+        if (V3OnDiskFormat.ENABLE_RERANK_FLOOR)
+            context.updateAnnRerankFloor(result.getWorstApproximateScoreInTopK());
         Tracing.trace("DiskANN search visited {} nodes to return {} results", result.getVisitedCount(), result.getNodes().length);
         // Threshold based searches are comprehensive and do not need to resume the search.
         if (threshold > 0)
@@ -197,7 +202,7 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
         }
         else
         {
-            var nodeScores = new AutoResumingNodeScoreIterator(searcher, result, nodesVisitedConsumer, topK, false);
+            var nodeScores = new AutoResumingNodeScoreIterator(searcher, result, nodesVisitedConsumer, limit, rerankK, false);
             return new NodeScoreToRowIdWithScoreIterator(nodeScores, ordinalsMap.getRowIdsView());
         }
     }
@@ -212,7 +217,7 @@ public class CassandraDiskAnn extends JVectorLuceneOnDiskGraph
     public void close() throws IOException
     {
         ordinalsMap.close();
-        searchers.close();
+        FileUtils.closeQuietly(searchers);
         graph.close();
         graphHandle.close();
     }

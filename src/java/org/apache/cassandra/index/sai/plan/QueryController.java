@@ -69,6 +69,7 @@ import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SSTableIndex;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
 import org.apache.cassandra.index.sai.disk.format.IndexFeatureSet;
+import org.apache.cassandra.index.sai.disk.v3.V3OnDiskFormat;
 import org.apache.cassandra.index.sai.metrics.TableQueryMetrics;
 import org.apache.cassandra.index.sai.utils.AbortedOperationException;
 import org.apache.cassandra.index.sai.utils.OrderingFilterRangeIterator;
@@ -90,6 +91,7 @@ import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.concurrent.Ref;
 
+import static java.lang.Math.max;
 import static org.apache.cassandra.config.CassandraRelevantProperties.SAI_VECTOR_SEARCH_ORDER_CHUNK_SIZE;
 
 public class QueryController implements Plan.Executor
@@ -523,12 +525,19 @@ public class QueryController implements Plan.Executor
     private List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderSstables(QueryViewBuilder.QueryView queryView, List<PrimaryKey> sourceKeys)
     {
         List<CloseableIterator<? extends PrimaryKeyWithSortKey>> results = new ArrayList<>();
+        long totalRows = queryView.view.sstables.stream().mapToLong(SSTableReader::getTotalRows).sum();
         for (var index : queryView.referencedIndexes)
         {
             try
             {
-                var iterators = sourceKeys.isEmpty() ? index.orderBy(orderer, mergeRange, queryContext, limit)
-                                                     : index.orderResultsBy(queryContext, sourceKeys, orderer, limit);
+                // We expect the number of top results found in each sstable to be proportional to its number of rows
+                // we don't pad this number more because resuming a search if we guess too low is very very inexpensive.
+                int sstableLimit = V3OnDiskFormat.REDUCE_TOPK_ACROSS_SSTABLES
+                                   ? max(1, (int) (limit * ((double) index.getSSTable().getTotalRows() / totalRows)))
+                                   : limit;
+
+                var iterators = sourceKeys.isEmpty() ? index.orderBy(orderer, mergeRange, queryContext, sstableLimit)
+                                                     : index.orderResultsBy(queryContext, sourceKeys, orderer, sstableLimit);
                 results.addAll(iterators);
             }
             catch (Throwable ex)

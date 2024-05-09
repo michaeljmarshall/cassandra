@@ -142,7 +142,7 @@ public class VectorMemtableIndexTest extends SAITester
             Set<Integer> foundKeys = new HashSet<>();
             int limit = getRandom().nextIntBetween(1, 100);
 
-            long expectedNumResults = Math.min(VectorSourceModel.OTHER.topKFor(limit, null), keysInRange.size());
+            long expectedNumResults = Math.min(limit, keysInRange.size());
 
             try (var iterator = memtableIndex.orderBy(new QueryContext(), orderer, keyRange, limit))
             {
