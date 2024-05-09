@@ -51,19 +51,24 @@ public class InvertedIndexSearcher extends IndexSearcher
 
     protected final TermsReader reader;
     protected final QueryEventListener.TrieIndexEventListener perColumnEventListener;
+    private final Version version;
+    private final boolean filterRangeResults;
 
     protected InvertedIndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
                                     PerIndexFiles perIndexFiles,
                                     SegmentMetadata segmentMetadata,
                                     IndexDescriptor indexDescriptor,
                                     IndexContext indexContext,
-                                    Version version) throws IOException
+                                    Version version,
+                                    boolean filterRangeResults) throws IOException
     {
         super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext);
 
         long root = metadata.getIndexRoot(IndexComponent.TERMS_DATA);
         assert root >= 0;
 
+        this.version = version;
+        this.filterRangeResults = filterRangeResults;
         perColumnEventListener = (QueryEventListener.TrieIndexEventListener)indexContext.getColumnQueryMetrics();
 
         Map<String,String> map = metadata.componentMetadatas.get(IndexComponent.TERMS_DATA).attributes;
@@ -93,21 +98,24 @@ public class InvertedIndexSearcher extends IndexSearcher
         return toPrimaryKeyIterator(postingList, context);
     }
 
-    protected PostingList searchPosting(Expression exp, QueryContext context)
+    private PostingList searchPosting(Expression exp, QueryContext context)
     {
         if (logger.isTraceEnabled())
             logger.trace(indexContext.logMessage("Searching on expression '{}'..."), exp);
 
+        // We use the version to encode the search boundaries for the trie to ensure we use version appropriate bounds.
         if (exp.getOp().isEquality() || exp.getOp() == Expression.Op.MATCH)
         {
-            final ByteComparable term = ByteComparable.fixedLength(exp.lower.value.encoded);
+            final ByteComparable term = version.onDiskFormat().encodeForOnDiskTrie(exp.lower.value.encoded, indexContext.getValidator());
             QueryEventListener.TrieIndexEventListener listener = MulticastQueryEventListeners.of(context, perColumnEventListener);
             return reader.exactMatch(term, listener, context);
         }
         else if (exp.getOp() == Expression.Op.RANGE)
         {
             QueryEventListener.TrieIndexEventListener listener = MulticastQueryEventListeners.of(context, perColumnEventListener);
-            return reader.rangeMatch(exp, listener, context);
+            var lower = exp.getEncodedLowerBoundByteComparable(version, false);
+            var upper = exp.getEncodedUpperBoundByteComparable(version, false);
+            return reader.rangeMatch(filterRangeResults ? exp : null, lower, upper, listener, context);
         }
         throw new IllegalArgumentException(indexContext.logMessage("Unsupported expression: " + exp));
     }

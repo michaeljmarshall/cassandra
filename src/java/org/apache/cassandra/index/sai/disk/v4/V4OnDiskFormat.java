@@ -49,27 +49,32 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     }
 
     @Override
-    public ByteComparable encode(ByteBuffer input, AbstractType<?> type)
+    public ByteComparable encodeForInMemoryTrie(ByteBuffer input, AbstractType<?> type)
     {
-        // TODO how important is the terminator? A terminator is used for range queries to simplify LT, EQ, and GT
-        //  bounds by preventing prefix matches. However, we don't support range queries on text fields. Is that something
-        //  we want to support?
-        // If we don't want range queries on text fields, then it's not necessary because encoding with
-        // the type's comparator will prevent weakly prefix free trie encodings that will meet out needs.
+        // Composite types use their individual type to ensure they sorted correctly in the trie so we can do
+        // range queries over entries.
         return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
                ? version -> ByteSource.appendTerminator(ByteSource.of(input, version), ByteSource.TERMINATOR)
                : TypeUtil.asComparableBytes(input, type);
     }
 
     @Override
-    public ByteComparable unescape(ByteComparable term, AbstractType<?> type)
+    public ByteComparable convertFromInMemoryToOnDiskEncoding(ByteComparable term, AbstractType<?> type)
     {
         // Composite types are not escaped, so we don't need to unescape them. The ByteSource.of call above
-        // is what requires unescaping.
+        // is what requires unescaping. Note unescape removes the terminator for affected types.
         return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
                ? v -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(v)))
                : term;
     }
 
-    // Note: we do not need to override the unescape method because we still unescape all terms that go in the trie.
+    @Override
+    public ByteComparable encodeForOnDiskTrie(ByteBuffer term, AbstractType<?> type)
+    {
+        // Note that fixedLength is the same as unescape(escape(input, type), type), but we skip some steps, so this
+        // is a bit faster.
+        return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
+               ? ByteComparable.fixedLength(term)
+               : TypeUtil.asComparableBytes(term, type);
+    }
 }

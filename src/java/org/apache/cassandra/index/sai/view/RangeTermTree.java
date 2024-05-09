@@ -57,21 +57,10 @@ public class RangeTermTree implements TermTree
     {
         Set<SSTableIndex> result = new HashSet<>();
         rangeTrees.forEach((version, rangeTree) -> {
-            Term minTerm, maxTerm;
-            if (Version.DB.onOrAfter(version))
-            {
-                // We do not further encode terms becuase we store them as their unencoded value in the
-                // segment metadata.
-                minTerm = e.lower == null ? rangeTree.min() : new Term(e.lower.value.encoded, comparator);
-                maxTerm = e.upper == null ? rangeTree.max() : new Term(e.upper.value.encoded, comparator);
-            }
-            else
-            {
-                // Before DB, range queries on map entries required special encoding where we remove the value
-                // from the entry boundaries.
-                minTerm = e.lower == null ? rangeTree.min() : new Term(e.getLowerBound(), comparator);
-                maxTerm = e.upper == null ? rangeTree.max() : new Term(e.getUpperBound(), comparator);
-            }
+            // Get the bounds given the version. Notice that we use the non-encoded representation for bounds
+            // because that is how we store them in the tree. The comparator is used to compare the bounds.
+            Term minTerm = e.lower == null ? rangeTree.min() : new Term(e.getLowerBoundByteBuffer(version), comparator);
+            Term maxTerm = e.upper == null ? rangeTree.max() : new Term(e.getUpperBoundByteBuffer(version), comparator);
             result.addAll(rangeTree.search(Interval.create(minTerm, maxTerm, null)));
         });
         return result;

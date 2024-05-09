@@ -192,10 +192,9 @@ public class TrieMemoryIndex extends MemoryIndex
     {
         ByteComparable lowerBound, upperBound;
         boolean lowerInclusive, upperInclusive;
-        var useLegacyEncoding = !Version.LATEST.onOrAfter(Version.DB) && TypeUtil.isComposite(expression.validator);
         if (expression.lower != null)
         {
-            lowerBound = encode(useLegacyEncoding ? expression.getLowerBound() : expression.lower.value.encoded);
+            lowerBound = expression.getEncodedLowerBoundByteComparable(Version.LATEST, true);
             lowerInclusive = expression.lower.inclusive;
         }
         else
@@ -206,7 +205,7 @@ public class TrieMemoryIndex extends MemoryIndex
 
         if (expression.upper != null)
         {
-            upperBound = encode(useLegacyEncoding ? expression.getUpperBound() : expression.upper.value.encoded);
+            upperBound = expression.getEncodedUpperBoundByteComparable(Version.LATEST, false);
             upperInclusive = expression.upper.inclusive;
         }
         else
@@ -217,7 +216,7 @@ public class TrieMemoryIndex extends MemoryIndex
 
         Collector cd = new Collector(keyRange);
         Trie<PrimaryKeys> subtrie = data.subtrie(lowerBound, lowerInclusive, upperBound, upperInclusive);
-        if (useLegacyEncoding)
+        if (!Version.LATEST.onOrAfter(Version.DB) && TypeUtil.isComposite(expression.validator))
             subtrie.entrySet().forEach(entry -> {
                 // Before version DA, we encoded composite types using a non order-preserving function. In order to
                 // perform a range query on a map, we use the bounds to get all entries for a given map key and then
@@ -259,12 +258,12 @@ public class TrieMemoryIndex extends MemoryIndex
 
     private ByteComparable encode(ByteBuffer input)
     {
-        return Version.LATEST.onDiskFormat().encode(input, indexContext.getValidator());
+        return Version.LATEST.onDiskFormat().encodeForInMemoryTrie(input, indexContext.getValidator());
     }
 
     private ByteComparable unescape(ByteComparable term)
     {
-        return Version.LATEST.onDiskFormat().unescape(term, indexContext.getValidator());
+        return Version.LATEST.onDiskFormat().convertFromInMemoryToOnDiskEncoding(term, indexContext.getValidator());
     }
 
     class PrimaryKeysReducer implements MemtableTrie.UpsertTransformer<PrimaryKeys, PrimaryKey>

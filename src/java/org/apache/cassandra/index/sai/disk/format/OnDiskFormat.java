@@ -217,28 +217,24 @@ public interface OnDiskFormat
 
     /**
      * Encode the given {@link ByteBuffer} into a {@link ByteComparable} object based on the provided {@link AbstractType}
-     * for storage in an index. This used for both the memory and on disk indexes.
+     * for storage in the in memory trie index. This is valid for term insertion and for encoding search bounds.
      * @return The encoded {@link ByteComparable} object
      */
-    public ByteComparable encode(ByteBuffer input, AbstractType<?> type);
+    public ByteComparable encodeForInMemoryTrie(ByteBuffer input, AbstractType<?> type);
 
     /**
-     * Unespace the given {@link ByteComparable} object based on the provided {@link AbstractType}.
-     * Note: this is only needed for versions AA through CA because we historically unescaped entries before inserting
-     * them into the trie index. See {@link org.apache.cassandra.index.sai.disk.v1.V1OnDiskFormat} for implementation
-     * details. We might be able to remove this in the future.
+     * Convert the given {@link ByteComparable} encoding based on the provided {@link AbstractType} from the in memory
+     * trie index to the on-disk trie index. This is needed for historical reasons and may not be needed in the future.
      * @return The unescaped {@link ByteComparable} object
      */
-    public ByteComparable unescape(ByteComparable term, AbstractType<?> type);
+    public ByteComparable convertFromInMemoryToOnDiskEncoding(ByteComparable term, AbstractType<?> type);
 
     /**
-     * Encode a term for use in the on-disk trie index. This is valid for term insertion and for encoding search bounds.
+     * Encode the given {@link ByteBuffer} into a {@link ByteComparable} object for use in the on-disk trie index.
+     * This is valid for term insertion and for encoding search bounds.
      * @param input The term to encode
      * @param type The type of the term
      * @return The encoded term
      */
-    default ByteComparable encodeForOnDiskTrie(ByteBuffer input, AbstractType<?> type)
-    {
-        return unescape(encode(input, type), type);
-    }
+    public ByteComparable encodeForOnDiskTrie(ByteBuffer input, AbstractType<?> type);
 }

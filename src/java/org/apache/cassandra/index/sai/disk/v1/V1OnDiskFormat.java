@@ -166,7 +166,7 @@ public class V1OnDiskFormat implements OnDiskFormat
                                           SegmentMetadata segmentMetadata) throws IOException
     {
         if (indexContext.isLiteral())
-            return new InvertedIndexSearcher(sstableContext.primaryKeyMapFactory(), indexFiles, segmentMetadata, sstableContext.indexDescriptor, indexContext, Version.AA);
+            return new InvertedIndexSearcher(sstableContext.primaryKeyMapFactory(), indexFiles, segmentMetadata, sstableContext.indexDescriptor, indexContext, Version.AA, true);
         return new KDTreeIndexSearcher(sstableContext.primaryKeyMapFactory(), indexFiles, segmentMetadata, sstableContext.indexDescriptor, indexContext);
     }
 
@@ -310,7 +310,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     }
 
     @Override
-    public ByteComparable encode(ByteBuffer input, AbstractType<?> type)
+    public ByteComparable encodeForInMemoryTrie(ByteBuffer input, AbstractType<?> type)
     {
         // All elements
         return TypeUtil.isLiteral(type) ? version -> ByteSource.appendTerminator(ByteSource.of(input, version), ByteSource.TERMINATOR)
@@ -318,10 +318,19 @@ public class V1OnDiskFormat implements OnDiskFormat
     }
 
     @Override
-    public ByteComparable unescape(ByteComparable term, AbstractType<?> type)
+    public ByteComparable convertFromInMemoryToOnDiskEncoding(ByteComparable term, AbstractType<?> type)
     {
         return TypeUtil.isLiteral(type) ? v -> ByteSourceInverse.unescape(ByteSource.peekable(term.asComparableBytes(v)))
                                         : term;
+    }
+
+    @Override
+    public ByteComparable encodeForOnDiskTrie(ByteBuffer input, AbstractType<?> type)
+    {
+        // Note that fixedLength is the same as unescape(escape(input, type), type), but we skip some steps, so this
+        // is a bit faster.
+        return TypeUtil.isLiteral(type) ? ByteComparable.fixedLength(input)
+                                        : TypeUtil.asComparableBytes(input, type);
     }
 
     protected boolean isBuildCompletionMarker(IndexComponent indexComponent)

@@ -135,24 +135,13 @@ public class TermsReader implements Closeable
     }
 
     /**
-     * Range query that uses the expression to find the posting lists for the terms that fall within the range.
-     * Intended for use with composite types when the value wasn't encoded correctly, so the expression is tested
-     * against the value.
+     * Range query that uses the lower and upper bounds to retrieve the search results within the range. When
+     * the expression is not null, it post-filters results using the expression.
      */
-    public PostingList rangeMatch(Expression exp, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
+    public PostingList rangeMatch(Expression exp, ByteComparable lower, ByteComparable upper, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
     {
         perQueryEventListener.onSegmentHit();
-        return new RangeQuery(exp, perQueryEventListener, context).execute();
-    }
-
-    /**
-     * Range query that uses the lower and upper bounds to find the posting lists for the terms that fall within the
-     * range.
-     */
-    public PostingList rangeMatch(ByteComparable lower, ByteComparable upper, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
-    {
-        perQueryEventListener.onSegmentHit();
-        return new RangeQuery(lower, upper, perQueryEventListener, context).execute();
+        return new RangeQuery(exp, lower, upper, perQueryEventListener, context).execute();
     }
 
     @VisibleForTesting
@@ -243,30 +232,15 @@ public class TermsReader implements Closeable
         private final ByteComparable lower;
         private final ByteComparable upper;
 
-        // When provided with the lower and the upper, we do not need to do any validation afterwards
-        RangeQuery(ByteComparable lower,
-                   ByteComparable upper,
-                   QueryEventListener.TrieIndexEventListener listener,
-                   QueryContext context)
-        {
-            this.listener = listener;
-            this.exp = null;
-            lookupStartTime = System.nanoTime();
-            this.context = context;
-            this.lower = lower;
-            this.upper = upper;
-        }
-
-        RangeQuery(Expression exp, QueryEventListener.TrieIndexEventListener listener, QueryContext context)
+        // When the exp is not null, we need to post filter the results
+        RangeQuery(Expression exp, ByteComparable lower, ByteComparable upper, QueryEventListener.TrieIndexEventListener listener, QueryContext context)
         {
             this.listener = listener;
             this.exp = exp;
             lookupStartTime = System.nanoTime();
             this.context = context;
-            // This works by creating an iterator over all the map entries for a given key and then filtering
-            // the results in the materializeResults method.
-            this.lower = exp.lower != null ? ByteComparable.fixedLength(exp.getLowerBound()) : null;
-            this.upper = exp.upper != null ? ByteComparable.fixedLength(exp.getUpperBound()) : null;
+            this.lower = lower;
+            this.upper = upper;
         }
 
         public PostingList execute()
@@ -287,7 +261,7 @@ public class TermsReader implements Closeable
                 context.checkpoint();
                 PostingList postings = exp == null
                                        ? readAndMergePostings(reader)
-                                       : readValidateValueAndMergePostings(reader);
+                                       : readFilterAndMergePosting(reader);
 
                 listener.onTraversalComplete(System.nanoTime() - lookupStartTime, TimeUnit.NANOSECONDS);
 
@@ -333,12 +307,12 @@ public class TermsReader implements Closeable
         }
 
         /**
-         * Reads the posting lists for the matching terms and merges them into a single posting list.
-         * It assumes that the posting list for each term is sorted.
+         * Reads the posting lists for the matching terms, apply the expression to filter results, and merge them into
+         * a single posting list. It assumes that the posting list for each term is sorted.
          *
          * @return the posting lists for the terms matching the query.
          */
-        private PostingList readValidateValueAndMergePostings(TrieTermsDictionaryReader reader) throws IOException
+        private PostingList readFilterAndMergePosting(TrieTermsDictionaryReader reader) throws IOException
         {
             assert reader.hasNext();
             ArrayList<PostingList.PeekablePostingList> postingLists = new ArrayList<>();

@@ -37,16 +37,18 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.github.jbellis.jvector.vector.VectorUtil;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.FloatType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.utils.GeoUtil;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.bytecomparable.ByteComparable;
+import org.apache.cassandra.utils.bytecomparable.ByteSource;
 import org.apache.lucene.util.SloppyMath;
 
 public class Expression
@@ -333,23 +335,67 @@ public class Expression
         return true;
     }
 
-    public ByteBuffer getLowerBound()
+    /**
+     * Returns the lower bound of the expression as a ByteComparable with an encoding based on the version, the
+     * validator, and whether the expression is in memory or on disk.
+     * @param version the version of the index
+     * @param inMemory whether the expression is in memory or on disk
+     * @return
+     */
+    public ByteComparable getEncodedLowerBoundByteComparable(Version version, boolean inMemory)
     {
-        return getBound(lower, true);
+        var unencodedLowerBound = getLowerBoundByteBuffer(version);
+        if (unencodedLowerBound == null)
+            return null;
+        var terminator = lower.inclusive ? ByteSource.TERMINATOR : ByteSource.GT_NEXT_COMPONENT;
+        return getBoundByteComparable(unencodedLowerBound, version, inMemory, terminator);
     }
 
-    public ByteBuffer getUpperBound()
+    /**
+     * Returns the upper bound of the expression as a ByteComparable with an encoding based on the version, the
+     * validator, and whether the expression is in memory or on disk.
+     * @param version the version of the index
+     * @param inMemory whether the expression is in memory or on disk
+     * @return
+     */
+    public ByteComparable getEncodedUpperBoundByteComparable(Version version, boolean inMemory)
     {
-        return getBound(upper, false);
+        var unencodedUpperBound = getUpperBoundByteBuffer(version);
+        if (unencodedUpperBound == null)
+            return null;
+        var terminator = upper.inclusive ? ByteSource.TERMINATOR : ByteSource.LT_NEXT_COMPONENT;
+        return getBoundByteComparable(unencodedUpperBound, version, inMemory, terminator);
     }
 
-    // This method is needed to satisy range queries for SAI on disk formats aa through ca.
-    private ByteBuffer getBound(Bound bound, boolean isLowerBound)
+    private ByteComparable getBoundByteComparable(ByteBuffer unencodedBound, Version version, boolean inMemory, int terminator)
+    {
+        if (TypeUtil.isComposite(validator) && version.onOrAfter(Version.DB))
+            return TypeUtil.asComparableBytes(unencodedBound, terminator, (CompositeType) validator);
+        else if (inMemory)
+            return version.onDiskFormat().encodeForInMemoryTrie(unencodedBound, validator);
+        else
+            return version.onDiskFormat().encodeForOnDiskTrie(unencodedBound, validator);
+    }
+
+    public ByteBuffer getLowerBoundByteBuffer(Version version)
+    {
+        return getBound(lower, true, version);
+    }
+
+    public ByteBuffer getUpperBoundByteBuffer(Version version)
+    {
+        return getBound(upper, false, version);
+    }
+
+    private ByteBuffer getBound(Bound bound, boolean isLowerBound, Version version)
     {
         if (bound == null)
             return null;
-        // TODO verify other usages of CompositeType, and possibly consider using a different type.
-        if (validator instanceof CompositeType)
+        // Composite types are currently only used in maps.
+        // Before DB, we need to extract the first component of the composite type to use as the trie search prefix.
+        // After DB, we can use the encoded value directly because the trie is encoded in order so the range
+        // correctly gets all relevant values.
+        if (version.onOrAfter(Version.DB) && validator instanceof CompositeType)
             return CompositeType.extractFirstComponentAsTrieSearchPrefix(bound.value.encoded, isLowerBound);
         return bound.value.encoded;
     }
