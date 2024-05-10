@@ -171,7 +171,7 @@ public class VectorInvalidQueryTest extends SAITester
         createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
         waitForIndexQueryable();
 
-        assertInvalidMessage("Use of ANN OF in an ORDER BY clause requires a LIMIT that is not greater than 1000. LIMIT was NO LIMIT",
+        assertInvalidMessage("SAI based ORDER BY clause requires a LIMIT that is not greater than 1000. LIMIT was NO LIMIT",
                              "SELECT * FROM %s ORDER BY val ann of [2.5, 3.5, 4.5]");
 
     }
