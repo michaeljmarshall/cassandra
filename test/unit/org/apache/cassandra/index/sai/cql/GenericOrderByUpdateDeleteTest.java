@@ -127,14 +127,28 @@ public class GenericOrderByUpdateDeleteTest extends SAITester
     }
 
     @Test
+    public void testTextOverwrittenRowsInDifferentMemtableOrSSTable() throws Throwable
+    {
+        testTextOverwritten(true);
+    }
+
+    @Test
     public void testTextOverwrittenRowsInSameMemtableOrSSTable() throws Throwable
+    {
+        testTextOverwritten(false);
+    }
+
+    private void testTextOverwritten(boolean shouldFlush) throws Throwable
     {
         createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val text)");
         createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
         waitForIndexQueryable();
+        disableCompaction();
 
         execute("INSERT INTO %s (pk, str_val) VALUES (0, 'a')");
         execute("INSERT INTO %s (pk, str_val) VALUES (1, 'b')");
+        if (shouldFlush)
+            flush();
         execute("INSERT INTO %s (pk, str_val) VALUES (0, 'c')");
 
         beforeAndAfterFlush(() -> {
@@ -143,7 +157,18 @@ public class GenericOrderByUpdateDeleteTest extends SAITester
     }
 
     @Test
+    public void testIntOverwrittenRowsInDifferentMemtableOrSSTable() throws Throwable
+    {
+        testIntOverwritten(true);
+    }
+
+    @Test
     public void testIntOverwrittenRowsInSameMemtableOrSSTable() throws Throwable
+    {
+        testIntOverwritten(false);
+    }
+
+    private void testIntOverwritten(boolean shouldFlush) throws Throwable
     {
         createTable("CREATE TABLE %s (pk int PRIMARY KEY, str_val int)");
         createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
@@ -151,6 +176,8 @@ public class GenericOrderByUpdateDeleteTest extends SAITester
 
         execute("INSERT INTO %s (pk, str_val) VALUES (0, 1)");
         execute("INSERT INTO %s (pk, str_val) VALUES (1, 2)");
+        if (shouldFlush)
+            flush();
         execute("INSERT INTO %s (pk, str_val) VALUES (0, 3)");
 
         beforeAndAfterFlush(() -> {
