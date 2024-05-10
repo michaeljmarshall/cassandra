@@ -29,7 +29,8 @@ import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 import org.apache.cassandra.utils.bytecomparable.ByteSource;
 
 /**
- * A PrimaryKey with one piece of metadata. The metadata is not used to determine equality or hash code, but it is used
+ * A PrimaryKey with one piece of metadata. Subclasses define the metadata, and to prevent unnecessary boxing, the
+ * metadata is not referenced in this calss. The metadata is not used to determine equality or hash code, but it is used
  * to compare the PrimaryKey objects.
  * Note: this class has a natural ordering that is inconsistent with equals.
  */
