@@ -277,7 +277,7 @@ public class TypeUtil
     {
         if (isInetAddress(type))
             return compareInet(b1, b2);
-        else if (useFaseByteOperations(type))
+        else if (useFastByteOperations(type))
             return FastByteOperations.compareUnsigned(b1, b2);
 
         return type.compare(b1, b2);
@@ -323,13 +323,13 @@ public class TypeUtil
     {
         // Override the comparator for BigInteger, frozen collections (not including composite types) and
         // composite types before DB version to maintain a consistent order between the in-memory index and the on-disk index.
-        if (useFaseByteOperations(type))
+        if (useFastByteOperations(type))
             return FastByteOperations::compareUnsigned;
 
         return type;
     }
 
-    private static boolean useFaseByteOperations(AbstractType<?> type)
+    private static boolean useFastByteOperations(AbstractType<?> type)
     {
         // TODO when I remove isCompositeOrFrozen from this conditional, some failing tests pass. What
         // additional test coverage do I need to validate this? Is it still valid for big int and decimal?
