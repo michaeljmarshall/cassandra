@@ -55,6 +55,7 @@ import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.RowFilter;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.BaseRowIterator;
 import org.apache.cassandra.db.rows.Row;
@@ -247,6 +248,13 @@ public class QueryController implements Plan.Executor
                                 cfs);
     }
 
+    /**
+     * Get an iterator over the rows for this partition key. Builds a search view that includes all memtables and all
+     * {@link SSTableSet#LIVE} sstables.
+     * @param key
+     * @param executionController
+     * @return
+     */
     public UnfilteredRowIterator getPartition(PrimaryKey key, ReadExecutionController executionController)
     {
         if (key == null)
@@ -256,6 +264,12 @@ public class QueryController implements Plan.Executor
         return partition.queryMemtableAndDisk(cfs, executionController);
     }
 
+    /**
+     * Get an iterator over the rows for this partition key. Restrict the search to the specified view.
+     * @param key
+     * @param executionController
+     * @return
+     */
     public UnfilteredRowIterator getPartition(PrimaryKey key, ColumnFamilyStore.ViewFragment view, ReadExecutionController executionController)
     {
         if (key == null)
