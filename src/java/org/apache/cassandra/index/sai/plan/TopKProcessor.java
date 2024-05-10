@@ -75,19 +75,20 @@ import org.apache.cassandra.utils.Pair;
 import static java.lang.Math.min;
 
 /**
- * Processor that scans all rows from given partitions and selects rows with top-k scores based on indexes.
+ * Processor applied to SAI based ORDER BY queries. This class could likely be refactored into either two filter
+ * methods depending on where the processing is happening or into two classes.
  *
- * TODO update me based on what I really do
- * This processor performs the following steps:
- * - collect rows with score into PriorityQueue that sorts rows based on score. If there are multiple vector indexes,
+ * This processor performs the following steps on a replica:
+ * - collect LIMIT rows from partition iterator, making sure that all are valid.
+ * - return rows in Primary Key order
+ *
+ * This processor performs the following steps on a coordinator:
+ * - consume all rows from the provided partition iterator and sort them according to the specified order.
+ *   For vectors, that is similarit score and for all others, that is the ordering defined by their
+ *   {@link org.apache.cassandra.db.marshal.AbstractType}. If there are multiple vector indexes,
  *   the final score is the sum of all vector index scores.
  * - remove rows with the lowest scores from PQ if PQ size exceeds limit
- * - return rows from PQ in primary key order to client
- *
- * Note that recall will be lower with paging, because:
- * - page size is used as limit
- * - for the first query, coordinator returns global top page-size rows within entire ring
- * - for the subsequent queries, coordinators returns global top page-size rows withom range from last-returned-row to max token
+ * - return rows from PQ in primary key order to caller
  */
 public class TopKProcessor
 {

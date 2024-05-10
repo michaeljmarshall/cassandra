@@ -199,7 +199,7 @@ public class BKDReader extends TraversingBKDReader implements Closeable
                 }
 
                 leafPointIndex++;
-                // If we're ascending
+                // If we're ascending, we need to read the leaf from the start, otherwise we need to read it from the end
                 int pointer = ascending ? leafPointIndex : leafPointCount - leafPointIndex - 1;
 
                 System.arraycopy(packedValues, pointer * packedBytesLength, scratch, 0, packedBytesLength);

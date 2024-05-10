@@ -476,14 +476,6 @@ public class IndexContext
         return result;
     }
 
-    /**
-     * Order by brute force... todo make more info here
-     */
-//    public void orderByBruteForce()
-//    {
-//        indexType
-//    }
-
     public long liveMemtableWriteCount()
     {
         return liveMemtables.values().stream().mapToLong(MemtableIndex::writeCount).sum();

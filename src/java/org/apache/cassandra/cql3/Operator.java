@@ -427,7 +427,7 @@ public enum Operator
             throw new UnsupportedOperationException();
         }
     },
-    // TODO find a way to break this out, but for now, we're doing this to get the poc running
+    // VSTODO find a way to break this out, but for now, we're doing this to get the poc running
     ORDER_BY_ASC(102)
     {
         @Override

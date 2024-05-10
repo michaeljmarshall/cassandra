@@ -652,7 +652,6 @@ public class StatementRestrictions
          */
         private void addOrderingRestrictions(List<Ordering> orderings, IndexRegistry indexRegistry, RestrictionSet.Builder receiver)
         {
-            // todo does this accidentally allow for double ordering with and without nonclustered ordering?
             List<Ordering> indexOrderings = orderings.stream().filter(o -> o.expression.hasNonClusteredOrdering()).collect(Collectors.toList());
 
             if (indexOrderings.size() > 1)

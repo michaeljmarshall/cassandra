@@ -1425,6 +1425,7 @@ public class SelectStatement implements CQLStatement.SingleKeyspaceCqlStatement
 
         private boolean isReversed(TableMetadata table, Map<ColumnMetadata, Ordering> orderingColumns, StatementRestrictions restrictions) throws InvalidRequestException
         {
+            // TODO just noticed this line today. What does this mean for us?
             // FIXME exception for ANN until we properly support general ORDER BY
             if (orderingColumns.values().stream().anyMatch(o -> o.expression.hasNonClusteredOrdering()))
                 return false;
