@@ -54,6 +54,8 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.invalidReq
  */
 public class StatementRestrictions
 {
+    public static final boolean ENABLE_SAI_GENERAL_ORDER_BY = Boolean.parseBoolean(System.getProperty("cassandra.sai.general_order_by", "true"));
+
     public static final String REQUIRES_ALLOW_FILTERING_MESSAGE =
     "Cannot execute this query as it might involve data filtering and " +
     "thus may have unpredictable performance. If you want to execute " +
@@ -663,12 +665,14 @@ public class StatementRestrictions
                 Ordering ordering = indexOrderings.get(0);
                 if (ordering.direction != Ordering.Direction.ASC && ordering.expression instanceof Ordering.Ann)
                     throw new InvalidRequestException("Descending ANN ordering is not supported");
+                if (!ENABLE_SAI_GENERAL_ORDER_BY && ordering.expression instanceof Ordering.SingleColumn)
+                    throw new InvalidRequestException("SAI based ORDER BY on non-vector column is not supported");
                 SingleRestriction restriction = ordering.expression.toRestriction();
                 if (!restriction.hasSupportingIndex(indexRegistry))
                 {
                     var type = restriction.getFirstColumn().type.asCQL3Type().getType();
                     // This is a slight hack, but once we support a way to order these types, we can remove it.
-                    if (type instanceof SimpleDateType || type instanceof IntegerType || type instanceof DecimalType)
+                    if (type instanceof IntegerType || type instanceof DecimalType)
                         throw new InvalidRequestException(String.format("SAI based ordering on column %s of type %s is not supported",
                                                           restriction.getFirstColumn(),
                                                           restriction.getFirstColumn().type.asCQL3Type()));
