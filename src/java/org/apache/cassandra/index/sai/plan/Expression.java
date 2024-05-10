@@ -344,11 +344,12 @@ public class Expression
      */
     public ByteComparable getEncodedLowerBoundByteComparable(Version version, boolean inMemory)
     {
-        var unencodedLowerBound = getLowerBoundByteBuffer(version);
-        if (unencodedLowerBound == null)
+        // Note: this value was encoded using the TypeUtil.encode method, but it wasn't
+        var bound = getPartiallyEncodedLowerBound(version);
+        if (bound == null)
             return null;
         var terminator = lower.inclusive ? ByteSource.TERMINATOR : ByteSource.GT_NEXT_COMPONENT;
-        return getBoundByteComparable(unencodedLowerBound, version, inMemory, terminator);
+        return getBoundByteComparable(bound, version, inMemory, terminator);
     }
 
     /**
@@ -360,13 +361,15 @@ public class Expression
      */
     public ByteComparable getEncodedUpperBoundByteComparable(Version version, boolean inMemory)
     {
-        var unencodedUpperBound = getUpperBoundByteBuffer(version);
-        if (unencodedUpperBound == null)
+        var bound = getPartiallyEncodedUpperBound(version);
+        if (bound == null)
             return null;
         var terminator = upper.inclusive ? ByteSource.TERMINATOR : ByteSource.LT_NEXT_COMPONENT;
-        return getBoundByteComparable(unencodedUpperBound, version, inMemory, terminator);
+        return getBoundByteComparable(bound, version, inMemory, terminator);
     }
 
+    // This call encodes the byte buffer into a ByteComparable object based on the version of the index, the validator,
+    // and whether the expression is in memory or on disk.
     private ByteComparable getBoundByteComparable(ByteBuffer unencodedBound, Version version, boolean inMemory, int terminator)
     {
         if (TypeUtil.isComposite(validator) && version.onOrAfter(Version.DB))
@@ -380,12 +383,28 @@ public class Expression
             return version.onDiskFormat().encodeForOnDiskTrie(unencodedBound, validator);
     }
 
-    public ByteBuffer getLowerBoundByteBuffer(Version version)
+    /**
+     * This is partially encoded because it uses the {@link TypeUtil#encode(ByteBuffer, AbstractType)} method on the
+     * {@link ByteBuffer}, but it does not apply the validator's encoding. We do this because we apply
+     * {@link TypeUtil#encode(ByteBuffer, AbstractType)} before we find the min/max on an index and this method is
+     * exposed publicly for determining if a bound is within an index's min/max.
+     * @param version
+     * @return
+     */
+    public ByteBuffer getPartiallyEncodedLowerBound(Version version)
     {
         return getBound(lower, true, version);
     }
 
-    public ByteBuffer getUpperBoundByteBuffer(Version version)
+    /**
+     * This is partially encoded because it uses the {@link TypeUtil#encode(ByteBuffer, AbstractType)} method on the
+     * {@link ByteBuffer}, but it does not apply the validator's encoding. We do this because we apply
+     * {@link TypeUtil#encode(ByteBuffer, AbstractType)} before we find the min/max on an index and this method is
+     * exposed publicly for determining if a bound is within an index's min/max.
+     * @param version
+     * @return
+     */
+    public ByteBuffer getPartiallyEncodedUpperBound(Version version)
     {
         return getBound(upper, false, version);
     }

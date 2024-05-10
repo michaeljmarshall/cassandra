@@ -105,6 +105,7 @@ public class TrieMemoryIndex extends MemoryIndex
                 if (!indexContext.validateMaxTermSize(key, term))
                     continue;
 
+                // Note that this term is already encoded once by the TypeUtil.encode call above.
                 setMinMaxTerm(term.duplicate());
 
                 final ByteComparable encodedTerm = encode(term.duplicate());

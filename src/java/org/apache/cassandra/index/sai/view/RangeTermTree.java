@@ -57,10 +57,11 @@ public class RangeTermTree implements TermTree
     {
         Set<SSTableIndex> result = new HashSet<>();
         rangeTrees.forEach((version, rangeTree) -> {
-            // Get the bounds given the version. Notice that we use the non-encoded representation for bounds
-            // because that is how we store them in the tree. The comparator is used to compare the bounds.
-            Term minTerm = e.lower == null ? rangeTree.min() : new Term(e.getLowerBoundByteBuffer(version), comparator);
-            Term maxTerm = e.upper == null ? rangeTree.max() : new Term(e.getUpperBoundByteBuffer(version), comparator);
+            // Get the bounds given the version. Notice that we use the partially-encoded representation for bounds
+            // because that is how we store them in the range tree. The comparator is used to compare the bounds to
+            // each tree's min/max to see if the sstable index is in the query range.
+            Term minTerm = e.lower == null ? rangeTree.min() : new Term(e.getPartiallyEncodedLowerBound(version), comparator);
+            Term maxTerm = e.upper == null ? rangeTree.max() : new Term(e.getPartiallyEncodedUpperBound(version), comparator);
             result.addAll(rangeTree.search(Interval.create(minTerm, maxTerm, null)));
         });
         return result;
