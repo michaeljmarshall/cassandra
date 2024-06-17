@@ -44,16 +44,24 @@ import static org.junit.Assert.*;
 
 public class PlanTest
 {
-    private final static Orderer ordering = Mockito.mock(Orderer.class);
+    private final static Orderer ordering = orderer();
+
+    private static Orderer orderer()
+    {
+        Orderer orderer = Mockito.mock(Orderer.class);
+        Mockito.when(orderer.isANN()).thenReturn(true);
+        return orderer;
+    }
+
     private final static RowFilter.Expression pred1 = filerPred("pred1", Operator.LT);
     private final static RowFilter.Expression pred2 = filerPred("pred2", Operator.LT);
     private final static RowFilter.Expression pred3 = filerPred("pred3", Operator.LT);
     private final static RowFilter.Expression pred4 = filerPred("pred4", Operator.LT);
 
-    private final static Expression saiPred1 = saiPred("pred1", Expression.Op.RANGE);
-    private final static  Expression saiPred2 = saiPred("pred2", Expression.Op.RANGE);
-    private final static  Expression saiPred3 = saiPred("pred3", Expression.Op.RANGE);
-    private final static  Expression saiPred4 = saiPred("pred4", Expression.Op.RANGE);
+    private final static Expression saiPred1 = saiPred("pred1", Expression.Op.RANGE, false);
+    private final static  Expression saiPred2 = saiPred("pred2", Expression.Op.RANGE, false);
+    private final static  Expression saiPred3 = saiPred("pred3", Expression.Op.RANGE, false);
+    private final static  Expression saiPred4 = saiPred("pred4", Expression.Op.RANGE, true);
     
     private final static RowFilter rowFilter1 = RowFilter.builder().add(pred1).build();
     private final static RowFilter rowFilter12 = RowFilter.builder().add(pred1).add(pred2).build();
@@ -65,12 +73,13 @@ public class PlanTest
     private final Plan.Factory factory = new Plan.Factory(table1M);
 
 
-    private static Expression saiPred(String column, Expression.Op operation)
+    private static Expression saiPred(String column, Expression.Op operation, boolean isLiteral)
     {
         Expression pred = Mockito.mock(Expression.class);
         Mockito.when(pred.toString()).thenReturn(operation.toString() + '(' + column + ')');
         Mockito.when(pred.getIndexName()).thenReturn(column + "_idx");
         Mockito.when(pred.getOp()).thenReturn(operation);
+        Mockito.when(pred.isLiteral()).thenReturn(isLiteral);
         return pred;
     }
 
@@ -85,7 +94,7 @@ public class PlanTest
     @Test
     public void empty()
     {
-        Plan.KeysIteration plan = factory.numericIndexScan(saiPred1, 0);
+        Plan.KeysIteration plan = factory.indexScan(saiPred1, 0);
         assertTrue(plan instanceof Plan.NumericIndexScan);
         assertEquals(0.0, plan.expectedKeys(), 0.01);
         assertEquals(0.0, plan.selectivity(), 0.01);
@@ -95,7 +104,7 @@ public class PlanTest
     @Test
     public void single()
     {
-        Plan.KeysIteration plan = factory.numericIndexScan(saiPred1, (long)(0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration plan = factory.indexScan(saiPred1, (long)(0.5 * factory.tableMetrics.rows));
         assertTrue(plan instanceof Plan.NumericIndexScan);
         assertEquals(0.5 * factory.tableMetrics.rows, plan.expectedKeys(), 0.01);
         assertEquals(0.5, plan.selectivity(), 0.01);
@@ -105,8 +114,8 @@ public class PlanTest
     @Test
     public void intersection()
     {
-        Plan.KeysIteration a1 = factory.numericIndexScan(saiPred1, (long)(0.2 * factory.tableMetrics.rows));
-        Plan.KeysIteration a2 = factory.numericIndexScan(saiPred2, (long)(0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration a1 = factory.indexScan(saiPred1, (long)(0.2 * factory.tableMetrics.rows));
+        Plan.KeysIteration a2 = factory.indexScan(saiPred2, (long)(0.5 * factory.tableMetrics.rows));
         Plan.KeysIteration plan1 = factory.intersection(Lists.newArrayList(a1, a2));
 
         assertTrue(plan1 instanceof Plan.Intersection);
@@ -114,8 +123,8 @@ public class PlanTest
         assertTrue(plan1.costPerKey() > a1.costPerKey());
         assertTrue(plan1.costPerKey() > a2.costPerKey());
 
-        Plan.KeysIteration b1 = factory.numericIndexScan(saiPred1, (long)(0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration b2 = factory.numericIndexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration b1 = factory.indexScan(saiPred1, (long)(0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration b2 = factory.indexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration plan2 = factory.intersection(Lists.newArrayList(b1, b2));
 
         assertTrue(plan2 instanceof Plan.Intersection);
@@ -127,8 +136,8 @@ public class PlanTest
     @Test
     public void intersectionWithEmpty()
     {
-        Plan.KeysIteration a1 = factory.numericIndexScan(saiPred1, 0);
-        Plan.KeysIteration a2 = factory.numericIndexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration a1 = factory.indexScan(saiPred1, 0);
+        Plan.KeysIteration a2 = factory.indexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration plan = factory.intersection(Lists.newArrayList(a1, a2));
         assertEquals(0.0, plan.selectivity(), 0.0001);
         assertEquals(0.0, plan.expectedKeys(), 0.0001);
@@ -139,7 +148,7 @@ public class PlanTest
     public void intersectionWithNothing()
     {
         Plan.KeysIteration a1 = factory.nothing;
-        Plan.KeysIteration a2 = factory.numericIndexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration a2 = factory.indexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration plan = factory.intersection(Lists.newArrayList(a1, a2));
         assertEquals(0.0, plan.selectivity(), 0.0001);
         assertEquals(0.0, plan.expectedKeys(), 0.0001);
@@ -150,7 +159,7 @@ public class PlanTest
     public void intersectionWithEverything()
     {
         Plan.KeysIteration a1 = factory.everything;
-        Plan.KeysIteration a2 = factory.numericIndexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration a2 = factory.indexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration plan = factory.intersection(Lists.newArrayList(a1, a2));
         assertSame(a2, plan);
 
@@ -162,9 +171,9 @@ public class PlanTest
     @Test
     public void intersectionWithUnion()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration s3 = factory.numericIndexScan(saiPred3, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, (long) (0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration u = factory.union(Lists.newArrayList(s2, s3));
         Plan.KeysIteration i1 = factory.intersection(Lists.newArrayList(s1, u));
         Plan.KeysIteration i2 = factory.intersection(Lists.newArrayList(s1, s2));
@@ -175,9 +184,9 @@ public class PlanTest
     @Test
     public void nestedIntersections()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration s3 = factory.numericIndexScan(saiPred3, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, (long) (0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration nested = factory.intersection(Lists.newArrayList(s2, s3));
         Plan.KeysIteration i1 = factory.intersection(Lists.newArrayList(s1, nested));
         Plan.KeysIteration i2 = factory.intersection(Lists.newArrayList(s1, s2, s3));
@@ -190,15 +199,15 @@ public class PlanTest
     {
         // Intersecting range scans is
 
-        Plan.KeysIteration n1 = factory.numericIndexScan(saiPred("a", Expression.Op.RANGE),
+        Plan.KeysIteration n1 = factory.indexScan(saiPred("a", Expression.Op.RANGE, false),
                                                          (long)(0.1 * factory.tableMetrics.rows));
-        Plan.KeysIteration n2 = factory.numericIndexScan(saiPred("b", Expression.Op.RANGE),
+        Plan.KeysIteration n2 = factory.indexScan(saiPred("b", Expression.Op.RANGE, false),
                                                          (long)(0.1 * factory.tableMetrics.rows));
         Plan.KeysIteration ni = factory.intersection(Lists.newArrayList(n1, n2));
 
-        Plan.KeysIteration l1 = factory.literalIndexScan(saiPred("c", Expression.Op.EQ),
+        Plan.KeysIteration l1 = factory.indexScan(saiPred("c", Expression.Op.EQ, true),
                                                          (long)(0.1 * factory.tableMetrics.rows));
-        Plan.KeysIteration l2 = factory.literalIndexScan(saiPred("d", Expression.Op.EQ),
+        Plan.KeysIteration l2 = factory.indexScan(saiPred("d", Expression.Op.EQ, true),
                                                          (long)(0.1 * factory.tableMetrics.rows));
         Plan.KeysIteration li = factory.intersection(Lists.newArrayList(l1, l2));
 
@@ -209,9 +218,9 @@ public class PlanTest
     @Test
     public void intersectThree()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.8 * factory.tableMetrics.rows));
-        Plan.KeysIteration s3 = factory.numericIndexScan(saiPred3, (long) (0.8 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.8 * factory.tableMetrics.rows));
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, (long) (0.8 * factory.tableMetrics.rows));
         Plan.KeysIteration intersect2 = factory.intersection(Lists.newArrayList(s1, s2));
         Plan.KeysIteration intersect3 = factory.intersection(Lists.newArrayList(s1, s2, s3));
 
@@ -224,8 +233,8 @@ public class PlanTest
     @Test
     public void union()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
         Plan.KeysIteration plan = factory.union(Lists.newArrayList(s1, s2));
 
         assertTrue(plan instanceof Plan.Union);
@@ -239,7 +248,7 @@ public class PlanTest
     public void unionWithNoting()
     {
         Plan.KeysIteration s1 = factory.nothing;
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
         Plan.KeysIteration plan = factory.union(Lists.newArrayList(s1, s2));
 
         assertSame(s2, plan);
@@ -250,7 +259,7 @@ public class PlanTest
     public void unionWithEverything()
     {
         Plan.KeysIteration s1 = factory.everything;
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
         Plan.KeysIteration plan = factory.union(Lists.newArrayList(s1, s2));
 
         assertSame(factory.everything, plan);
@@ -259,7 +268,7 @@ public class PlanTest
     @Test
     public void fetch()
     {
-        Plan.KeysIteration i = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration i = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
         Plan.RowsIteration s = factory.fetch(i);
         assertEquals(0.5 * factory.tableMetrics.rows, s.expectedRows(), 0.01);
         assertTrue(s.fullCost() > 0.5 * factory.tableMetrics.rows * (SAI_KEY_COST + ROW_COST));
@@ -268,7 +277,7 @@ public class PlanTest
     @Test
     public void limit()
     {
-        Plan.KeysIteration i = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration i = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
         Plan.RowsIteration s = factory.fetch(i);
         Plan.RowsIteration l = factory.limit(s, 10);
         assertEquals(10, l.expectedRows(), 0.01);
@@ -278,7 +287,7 @@ public class PlanTest
     @Test
     public void filter()
     {
-        Plan.KeysIteration i = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration i = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
         Plan.RowsIteration s = factory.fetch(i);
         Plan.RowsIteration f = factory.filter(RowFilter.builder().add(pred1).build(), s, 0.25);
         assertEquals(0.25 * factory.tableMetrics.rows, f.expectedRows(), 0.01);
@@ -289,7 +298,7 @@ public class PlanTest
     @Test
     public void filterAndLimit()
     {
-        Plan.KeysIteration i = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration i = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
         Plan.RowsIteration s = factory.fetch(i);
         Plan.RowsIteration f = factory.filter(RowFilter.builder().add(pred1).build(), s, 0.25);
         Plan.RowsIteration l = factory.limit(f, 10);
@@ -300,7 +309,7 @@ public class PlanTest
     @Test
     public void annSort()
     {
-        Plan.KeysIteration i = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration i = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
         Plan.KeysIteration s = factory.sort(i, ordering);
 
         assertEquals(0.5 * factory.tableMetrics.rows, s.expectedKeys(), 0.01);
@@ -310,7 +319,7 @@ public class PlanTest
     @Test
     public void annScan()
     {
-        Plan.KeysIteration i = factory.annScan(ordering);
+        Plan.KeysIteration i = factory.sort(factory.everything, ordering);
         assertEquals(factory.tableMetrics.rows, i.expectedKeys(), 0.01);
         assertEquals(0.0, i.initCost(), 0.01);
         assertEquals(factory.tableMetrics.rows * ANN_SCORED_KEY_COST, i.fullCost(), 0.01);
@@ -319,9 +328,9 @@ public class PlanTest
     @Test
     public void findNodeByType()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.2 * factory.tableMetrics.rows));
-        Plan.KeysIteration s3 = factory.numericIndexScan(saiPred3, (long) (0.1 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.2 * factory.tableMetrics.rows));
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, (long) (0.1 * factory.tableMetrics.rows));
         RowFilter rowFilter = RowFilter.builder().add(pred1).add(pred2).add(pred3).build();
 
         Plan.KeysIteration union = factory.union(Lists.newArrayList(factory.intersection(Lists.newArrayList(s1, s2)), s3));
@@ -330,7 +339,7 @@ public class PlanTest
         Plan.RowsIteration filter = factory.recheckFilter(rowFilter, fetch);
         Plan.RowsIteration limit = factory.limit(filter, 3);
 
-        assertEquals(List.of(s2, s1, s3), limit.nodesOfType(Plan.NumericIndexScan.class));
+        assertEquals(List.of(s2, s1, s3), limit.nodesOfType(Plan.IndexScan.class));
         assertEquals(List.of(union), limit.nodesOfType(Plan.Union.class));
         assertEquals(List.of(fetch), limit.nodesOfType(Plan.Fetch.class));
         assertEquals(List.of(filter), limit.nodesOfType(Plan.Filter.class));
@@ -341,9 +350,9 @@ public class PlanTest
     @Test
     public void removeSubplan()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, 20);
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, 30);
-        Plan.KeysIteration s3 = factory.numericIndexScan(saiPred3, 50);
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, 20);
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, 30);
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, 50);
         Plan.KeysIteration plan1 = factory.intersection(Lists.newArrayList(s1, s2, s3));
         Plan plan2 = plan1.remove(s2.id);
 
@@ -363,10 +372,10 @@ public class PlanTest
     @Test
     public void removeNestedSubplan()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, 50);
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, 30);
-        Plan.KeysIteration s3 = factory.numericIndexScan(saiPred3, 80);
-        Plan.KeysIteration s4 = factory.numericIndexScan(saiPred4, 50);
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, 50);
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, 30);
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, 80);
+        Plan.KeysIteration s4 = factory.indexScan(saiPred4, 50);
 
         Plan.KeysIteration sub1 = factory.intersection(Lists.newArrayList(s1, s2));
         Plan.KeysIteration sub2 = factory.intersection(Lists.newArrayList(s3, s4));
@@ -383,10 +392,10 @@ public class PlanTest
     @Test
     public void intersectionClauseLimit()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, 3);
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, 4);
-        Plan.KeysIteration s3 = factory.literalIndexScan(saiPred3, 1);
-        Plan.KeysIteration s4 = factory.literalIndexScan(saiPred4, 2);
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, 3);
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, 4);
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, 1);
+        Plan.KeysIteration s4 = factory.indexScan(saiPred4, 2);
         Plan.KeysIteration intersect = factory.intersection(Lists.newArrayList(s1, s2, s3, s4));
         Plan.RowsIteration plan = factory.limit(factory.fetch(intersect), 3);
 
@@ -412,9 +421,9 @@ public class PlanTest
     @Test
     public void rangeIterator()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, 3);
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, 3);
-        Plan.KeysIteration s3 = factory.literalIndexScan(saiPred3, 1);
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, 3);
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, 3);
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, 1);
         Plan.KeysIteration plan = factory.union(Lists.newArrayList(factory.intersection(Lists.newArrayList(s1, s2)), s3));
 
         Map<Expression, RangeIterator> iterators = new HashMap<>();
@@ -451,15 +460,15 @@ public class PlanTest
     public void builder()
     {
         Plan plan1 = factory.intersectionBuilder()
-                            .add(factory.numericIndexScan(saiPred1, 50))
-                            .add(factory.numericIndexScan(saiPred2, 50))
+                            .add(factory.indexScan(saiPred1, 50))
+                            .add(factory.indexScan(saiPred2, 50))
                             .build();
         assertTrue(plan1 instanceof Plan.Intersection);
         assertEquals(2, plan1.subplans().size());
 
         Plan plan2 = factory.unionBuilder()
-                            .add(factory.numericIndexScan(saiPred3, 50))
-                            .add(factory.numericIndexScan(saiPred4, 50))
+                            .add(factory.indexScan(saiPred3, 50))
+                            .add(factory.indexScan(saiPred4, 50))
                             .build();
         assertTrue(plan2 instanceof Plan.Union);
         assertEquals(2, plan2.subplans().size());
@@ -469,9 +478,9 @@ public class PlanTest
     public void prettyPrint()
     {
         Locale.setDefault(Locale.ENGLISH);
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.002 * factory.tableMetrics.rows));
-        Plan.KeysIteration s3 = factory.literalIndexScan(saiPred3, (long) (0.001 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.002 * factory.tableMetrics.rows));
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, (long) (0.001 * factory.tableMetrics.rows));
         Plan.KeysIteration union = factory.union(Lists.newArrayList(factory.intersection(Lists.newArrayList(s1, s2)), s3));
         Plan.KeysIteration sort = factory.sort(union, ordering);
         Plan.RowsIteration fetch = factory.fetch(sort);
@@ -497,10 +506,10 @@ public class PlanTest
         // If one of the intersection branches has bad selectivity (here 90%), then performing the intersection
         // makes no sense, because it will cause more effort to perform the intersection than to fetch the additional
         // rows that weren't filtered out
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.99 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.001 * factory.tableMetrics.rows));
-        Plan.KeysIteration s3 = factory.numericIndexScan(saiPred3, (long) (0.95 * factory.tableMetrics.rows));
-        Plan.KeysIteration s4 = factory.numericIndexScan(saiPred4, (long) (0.97 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.99 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.001 * factory.tableMetrics.rows));
+        Plan.KeysIteration s3 = factory.indexScan(saiPred3, (long) (0.95 * factory.tableMetrics.rows));
+        Plan.KeysIteration s4 = factory.indexScan(saiPred4, (long) (0.97 * factory.tableMetrics.rows));
         Plan.KeysIteration intersect = factory.intersection(Lists.newArrayList(s1, s2, s3, s4));
         Plan.RowsIteration origPlan = factory.fetch(intersect);
 
@@ -512,8 +521,8 @@ public class PlanTest
     @Test
     public void optimizeIntersectionWithEmpty()
     {
-        Plan.KeysIteration a1 = factory.numericIndexScan(saiPred1, 0);
-        Plan.KeysIteration a2 = factory.numericIndexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration a1 = factory.indexScan(saiPred1, 0);
+        Plan.KeysIteration a2 = factory.indexScan(saiPred2, (long)(0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration plan = factory.intersection(Lists.newArrayList(a1, a2));
         Plan optimized = plan.optimize();
         assertSame(optimized, a1);
@@ -523,8 +532,8 @@ public class PlanTest
     public void leaveGoodIntersection()
     {
         // If both intersection selectivities are good, then the intersection shouldn't be removed at all
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.0001 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.2 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.0001 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.2 * factory.tableMetrics.rows));
         Plan.KeysIteration intersect = factory.intersection(Lists.newArrayList(s1, s2));
         Plan.RowsIteration origPlan = factory.fetch(intersect);
 
@@ -535,8 +544,8 @@ public class PlanTest
     @Test
     public void removeNeedlessIntersectionUnderFilter()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.0001 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.9 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.0001 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.9 * factory.tableMetrics.rows));
         Plan.KeysIteration intersect = factory.intersection(Lists.newArrayList(s1, s2));
         Plan.RowsIteration fetch = factory.fetch(intersect);
         RowFilter rowFilter = RowFilter.builder().add(pred1).add(pred2).build();
@@ -550,8 +559,8 @@ public class PlanTest
     @Test
     public void leaveGoodIntersectionUnderFilter()
     {
-        Plan.KeysIteration s1 = factory.numericIndexScan(saiPred1, (long) (0.1 * factory.tableMetrics.rows));
-        Plan.KeysIteration s2 = factory.numericIndexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration s1 = factory.indexScan(saiPred1, (long) (0.1 * factory.tableMetrics.rows));
+        Plan.KeysIteration s2 = factory.indexScan(saiPred2, (long) (0.5 * factory.tableMetrics.rows));
         Plan.KeysIteration intersect = factory.intersection(Lists.newArrayList(s1, s2));
         Plan.RowsIteration fetch = factory.fetch(intersect);
         RowFilter rowFilter = RowFilter.builder().add(pred1).add(pred2).build();
@@ -571,14 +580,14 @@ public class PlanTest
         // This allows us to perform such query lazily and the cost should be proportional to n.
         // Important: this requires hight number of rows in the table, so that the cost of fetching all keys from the index
         // is significantly larger than the cost of fetching a few result rows from storage.
-        Plan.KeysIteration indexScan = factory.numericIndexScan(saiPred1, (long) (0.1 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan = factory.indexScan(saiPred1, (long) (0.1 * factory.tableMetrics.rows));
         Plan.KeysIteration sort = factory.sort(indexScan, ordering);
         Plan.RowsIteration fetch = factory.fetch(sort);
         Plan.RowsIteration postFilter = factory.recheckFilter(rowFilter1, fetch);
         Plan.RowsIteration origPlan = factory.limit(postFilter, 3);
 
         Plan optimizedPlan = origPlan.optimize();
-        assertTrue(optimizedPlan.contains(p -> p instanceof Plan.AnnScan));
+        assertTrue(optimizedPlan.contains(p -> p instanceof Plan.AnnIndexScan));
         assertEquals(0.0, optimizedPlan.cost().initCost(), 0.0);
 
         // The optimized plan should finish before the original plan even gets the first row out ;)
@@ -589,8 +598,8 @@ public class PlanTest
     public void replaceIntersectionAndAnnSortWithAnnScan()
     {
         // Similar like the previous test, but now with an intersection:
-        Plan.KeysIteration indexScan1 = factory.numericIndexScan(saiPred1, (long) (0.1 * factory.tableMetrics.rows));
-        Plan.KeysIteration indexScan2 = factory.numericIndexScan(saiPred2, (long) (0.2 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan1 = factory.indexScan(saiPred1, (long) (0.1 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan2 = factory.indexScan(saiPred2, (long) (0.2 * factory.tableMetrics.rows));
         Plan.KeysIteration intersection = factory.intersection(Lists.newArrayList(indexScan1, indexScan2));
         Plan.KeysIteration sort = factory.sort(intersection, ordering);
         Plan.RowsIteration fetch = factory.fetch(sort);
@@ -598,7 +607,7 @@ public class PlanTest
         Plan.RowsIteration origPlan = factory.limit(postFilter, 3);
 
         Plan optimizedPlan = origPlan.optimize();
-        assertTrue(optimizedPlan.contains(p -> p instanceof Plan.AnnScan));
+        assertTrue(optimizedPlan.contains(p -> p instanceof Plan.AnnIndexScan));
         assertEquals(0.0, optimizedPlan.cost().initCost(), 0.0);
 
         // The optimized plan should finish before the original plan even gets the first row out ;)
@@ -608,8 +617,8 @@ public class PlanTest
     @Test
     public void removeIntersectionBelowAnnSort()
     {
-        Plan.KeysIteration indexScan1 = factory.numericIndexScan(saiPred1, (long) (0.001 * factory.tableMetrics.rows));
-        Plan.KeysIteration indexScan2 = factory.numericIndexScan(saiPred2, (long) (0.9 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan1 = factory.indexScan(saiPred1, (long) (0.001 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan2 = factory.indexScan(saiPred2, (long) (0.9 * factory.tableMetrics.rows));
         Plan.KeysIteration intersection = factory.intersection(Lists.newArrayList(indexScan1, indexScan2));
         Plan.KeysIteration sort = factory.sort(intersection, ordering);
         Plan.RowsIteration fetch = factory.fetch(sort);
@@ -618,17 +627,17 @@ public class PlanTest
 
         Plan optimizedPlan = origPlan.optimize();
         assertFalse(optimizedPlan.contains(p -> p instanceof Plan.Intersection));  // no intersection
-        assertFalse(optimizedPlan.contains(p -> p instanceof Plan.AnnScan));    // no direct ANN index scan
-        assertTrue(optimizedPlan.contains(p -> p instanceof Plan.AnnSort));
+        assertFalse(optimizedPlan.contains(p -> p instanceof Plan.AnnIndexScan));    // no direct ANN index scan
+        assertTrue(optimizedPlan.contains(p -> p instanceof Plan.KeysSort));
         assertTrue(optimizedPlan.contains(p -> p instanceof Plan.NumericIndexScan));
     }
 
     @Test
     public void reduceNumberOfIntersectionsBelowAnnSort()
     {
-        Plan.KeysIteration indexScan1 = factory.numericIndexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration indexScan2 = factory.numericIndexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration indexScan3 = factory.numericIndexScan(saiPred3, (long) (0.5 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan1 = factory.indexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan2 = factory.indexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan3 = factory.indexScan(saiPred3, (long) (0.5 * factory.tableMetrics.rows));
         Plan.KeysIteration intersection = factory.intersection(Lists.newArrayList(indexScan1, indexScan2, indexScan3));
         Plan.KeysIteration sort = factory.sort(intersection, ordering);
         Plan.RowsIteration fetch = factory.fetch(sort);
@@ -645,9 +654,9 @@ public class PlanTest
     @Test
     public void leaveThreeIntersectionsBelowAnnSort()
     {
-        Plan.KeysIteration indexScan1 = factory.numericIndexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration indexScan2 = factory.numericIndexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
-        Plan.KeysIteration indexScan3 = factory.numericIndexScan(saiPred3, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan1 = factory.indexScan(saiPred1, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan2 = factory.indexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan3 = factory.indexScan(saiPred3, (long) (0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration intersection = factory.intersection(Lists.newArrayList(indexScan1, indexScan2, indexScan3));
         Plan.KeysIteration sort = factory.sort(intersection, ordering);
         Plan.RowsIteration fetch = factory.fetch(sort);
@@ -663,8 +672,8 @@ public class PlanTest
     @Test
     public void leaveIntersectionsBelowAnnSort()
     {
-        Plan.KeysIteration indexScan1 = factory.numericIndexScan(saiPred1, (long) (0.001 * factory.tableMetrics.rows));
-        Plan.KeysIteration indexScan2 = factory.numericIndexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan1 = factory.indexScan(saiPred1, (long) (0.001 * factory.tableMetrics.rows));
+        Plan.KeysIteration indexScan2 = factory.indexScan(saiPred2, (long) (0.01 * factory.tableMetrics.rows));
         Plan.KeysIteration intersection = factory.intersection(Lists.newArrayList(indexScan1, indexScan2));
         Plan.KeysIteration sort = factory.sort(intersection, ordering);
         Plan.RowsIteration fetch = factory.fetch(sort);
@@ -672,6 +681,8 @@ public class PlanTest
         Plan.RowsIteration origPlan = factory.limit(postFilter, 3);
 
         Plan optimizedPlan = origPlan.optimize();
+
+
         assertSame(origPlan, optimizedPlan);
     }
 
@@ -753,7 +764,7 @@ public class PlanTest
         Expression[] saiPredicates = new Expression[] { saiPred1, saiPred2, saiPred3, saiPred4 };
         for (int i = 0; i < selectivities.size(); i++)
         {
-            indexScans.add(factory.numericIndexScan(saiPredicates[i], (long) (selectivities.get(i) * metrics.rows)));
+            indexScans.add(factory.indexScan(saiPredicates[i], (long) (selectivities.get(i) * metrics.rows)));
             rowFilterBuilder.add(predicates[i]);
         }
 
@@ -763,7 +774,7 @@ public class PlanTest
         Plan.RowsIteration origPlan = factory.limit(postFilter, 3);
 
         Plan optimizedPlan = origPlan.optimize();
-        List<Plan.NumericIndexScan> resultIndexScans = optimizedPlan.nodesOfType(Plan.NumericIndexScan.class);
+        List<Plan.IndexScan> resultIndexScans = optimizedPlan.nodesOfType(Plan.IndexScan.class);
         assertTrue("original:\n" + origPlan.toStringRecursive() + "optimized:\n" + optimizedPlan.toStringRecursive(),
                      expectedIndexScanCount.contains(resultIndexScans.size()));
     }
@@ -879,7 +890,7 @@ public class PlanTest
         for (int i = 0; i < selectivities.size(); i++)
         {
             String column = "p" + i;
-            Plan.KeysIteration indexScan = factory.numericIndexScan(saiPred(column, operation),
+            Plan.KeysIteration indexScan = factory.indexScan(saiPred(column, operation, operation == Expression.Op.EQ),
                                                                     (long) (selectivities.get(i) * metrics.rows));
             indexScans.add(indexScan);
             rowFilterBuilder.add(filerPred(column, operation == Expression.Op.RANGE ? Operator.LT : Operator.EQ));

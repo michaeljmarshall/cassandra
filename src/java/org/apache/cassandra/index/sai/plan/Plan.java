@@ -132,6 +132,12 @@ abstract public class Plan
         this.id = id;
         this.factory = factory;
     }
+
+    /**
+     * Returns the order of the keys / rows returned by this plan.
+     */
+    protected abstract @Nullable Orderer ordering();
+
     /**
      * Returns a new list containing subplans of this node.
      * The list can be later freely modified by the caller and does not affect the original plan.
@@ -571,6 +577,7 @@ abstract public class Plan
         {
             return cost().costPerKey();
         }
+
     }
 
     /**
@@ -615,6 +622,13 @@ abstract public class Plan
             return new KeysIterationCost(0, 0.0, 0.0, 0.0);
         }
 
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return null;
+        }
+
         @Override
         protected double estimateCostPerSkip(double distance)
         {
@@ -652,6 +666,13 @@ abstract public class Plan
                                          Double.POSITIVE_INFINITY);
         }
 
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return null;
+        }
+
         @Override
         protected double estimateCostPerSkip(double distance)
         {
@@ -671,20 +692,43 @@ abstract public class Plan
 
     abstract static class IndexScan extends Leaf
     {
+        @Nullable
         protected final Expression predicate;
+        @Nullable
+        protected final Orderer ordering;
+
         protected final long matchingKeysCount;
 
-        public IndexScan(Factory factory, int id, Expression predicate, long matchingKeysCount)
+        public IndexScan(Factory factory, int id, Expression predicate, long matchingKeysCount, Orderer ordering)
         {
             super(factory, id);
+
+            // TODO: we don't support both ordering and filtering on the same index yet.
+            Preconditions.checkArgument(predicate != null ^ ordering != null,
+                                        "Either predicate or ordering must be set, but not both");
             this.predicate = predicate;
+            this.ordering = ordering;
             this.matchingKeysCount = matchingKeysCount;
         }
 
         @Override
         protected final String description()
         {
-            return "of " + predicate.getIndexName() + " using " + predicate;
+            assert predicate != null || ordering != null;
+            String indexScanStr = (predicate != null)
+                ? "of " + predicate.getIndexName() + " using " + predicate
+                : "of " + ordering.getIndexName();
+            String orderStr = "";
+            if (ordering != null)
+                orderStr = ordering.isAscending() ? " in order ASC" : " in order DESC";
+            return indexScanStr + orderStr;
+        }
+
+        @Nullable
+        @Override
+        protected final Orderer ordering()
+        {
+            return ordering;
         }
 
         @Override
@@ -718,7 +762,7 @@ abstract public class Plan
             double postingsCountExponent;
             double skipDistanceFactor;
             double skipDistanceExponent;
-            if (predicate.getOp() == Expression.Op.RANGE)
+            if (predicate == null || predicate.getOp() == Expression.Op.RANGE)
             {
                 skipCostFactor = RANGE_SCAN_SKIP_COST;
                 postingsCountFactor = RANGE_SCAN_SKIP_COST_POSTINGS_COUNT_FACTOR;
@@ -753,7 +797,10 @@ abstract public class Plan
         @Override
         protected Iterator<? extends PrimaryKey> execute(Executor executor)
         {
-            return executor.getKeysFromIndex(predicate);
+            assert predicate != null ^ ordering != null;
+            return (ordering != null)
+                ? executor.getTopKRows()
+                : executor.getKeysFromIndex(predicate);
         }
     }
     /**
@@ -761,9 +808,9 @@ abstract public class Plan
      */
     static class NumericIndexScan extends IndexScan
     {
-        public NumericIndexScan(Factory factory, int id, Expression predicate, long matchingKeysCount)
+        public NumericIndexScan(Factory factory, int id, Expression predicate, Orderer ordering, long matchingKeysCount)
         {
-            super(factory, id, predicate, matchingKeysCount);
+            super(factory, id, predicate, matchingKeysCount, ordering);
         }
     }
 
@@ -772,9 +819,9 @@ abstract public class Plan
      */
     static class LiteralIndexScan extends IndexScan
     {
-        public LiteralIndexScan(Factory factory, int id, Expression predicate, long matchingKeysCount)
+        public LiteralIndexScan(Factory factory, int id, Expression predicate, Orderer ordering, long matchingKeysCount)
         {
-            super(factory, id, predicate, matchingKeysCount);
+            super(factory, id, predicate, matchingKeysCount, ordering);
         }
     }
 
@@ -792,6 +839,7 @@ abstract public class Plan
             Preconditions.checkArgument(!subplans.isEmpty(), "Subplans must not be empty");
             this.subplans = Collections.unmodifiableList(subplans);
         }
+
 
         @Override
         protected ControlFlow forEachSubplan(Function<Plan, ControlFlow> function)
@@ -834,6 +882,13 @@ abstract public class Plan
             }
             double expectedKeys = factory.tableMetrics.rows * selectivity;
             return new KeysIterationCost(expectedKeys, selectivity, initCost, iterCost);
+        }
+
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return subplans.get(0).ordering();
         }
 
         @Override
@@ -902,6 +957,13 @@ abstract public class Plan
             return newSubplans.equals(subplans)
                    ? this
                    : factory.intersection(newSubplans, id);
+        }
+
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return subplans.get(0).ordering();
         }
 
         @Override
@@ -993,13 +1055,12 @@ abstract public class Plan
      * Sorts keys in ANN order.
      * Must fetch all keys from the source before sorting, so it has a high initial cost.
      */
-    static class AnnSort extends KeysIteration
+    static final class KeysSort extends KeysIteration
     {
         private final KeysIteration source;
         final Orderer ordering;
 
-
-        protected AnnSort(Factory factory, int id, KeysIteration source, Orderer ordering)
+        KeysSort(Factory factory, int id, KeysIteration source, Orderer ordering)
         {
             super(factory, id);
             this.source = source;
@@ -1015,16 +1076,40 @@ abstract public class Plan
         @Override
         protected Plan withUpdatedSubplans(Function<Plan, Plan> updater)
         {
-            return factory.annSort((KeysIteration) updater.apply(source), ordering, id);
+            return factory.sort((KeysIteration) updater.apply(source), ordering, id);
         }
 
         @Override
         protected KeysIterationCost estimateCost()
         {
+            return ordering.isANN()
+                ? estimateAnnSortCost()
+                : estimateGlobalSortCost();
+
+        }
+
+        private KeysIterationCost estimateAnnSortCost()
+        {
             return new KeysIterationCost(source.expectedKeys(),
                                          source.selectivity(),
                                          source.fullCost() + source.expectedKeys() * CostCoefficients.ANN_INPUT_KEY_COST,
                                          source.expectedKeys() * CostCoefficients.ANN_SCORED_KEY_COST);
+        }
+
+        private KeysIterationCost estimateGlobalSortCost()
+        {
+            return new KeysIterationCost(source.expectedKeys(),
+                                         source.selectivity(),
+                                         source.fullCost() + source.expectedKeys() * ROW_COST,
+                                         source.expectedKeys() * SAI_KEY_COST);
+
+        }
+
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return ordering;
         }
 
         @Override
@@ -1038,18 +1123,17 @@ abstract public class Plan
         {
             return executor.getTopKRows((RangeIterator) source.execute(executor));
         }
-
     }
 
     /**
      * Returns all keys in ANN order.
-     * Contrary to {@link AnnSort}, there is no input node here and the output is generated lazily.
+     * Contrary to {@link KeysSort}, there is no input node here and the output is generated lazily.
      */
-    static class AnnScan extends Leaf
+    final static class AnnIndexScan extends Leaf
     {
         final Orderer ordering;
 
-        protected AnnScan(Factory factory, int id, Orderer ordering)
+        AnnIndexScan(Factory factory, int id, Orderer ordering)
         {
             super(factory, id);
             this.ordering = ordering;
@@ -1064,10 +1148,17 @@ abstract public class Plan
                                          factory.tableMetrics.rows * CostCoefficients.ANN_SCORED_KEY_COST);
         }
 
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return ordering;
+        }
+
         @Override
         protected double estimateCostPerSkip(double distance)
         {
-            throw new UnsupportedOperationException("AnnScan doesn't support skipping");
+            throw new UnsupportedOperationException("AnnIndexScan doesn't support skipping");
         }
 
         @Override
@@ -1097,7 +1188,6 @@ abstract public class Plan
 
         protected abstract RowsIterationCost estimateCost();
 
-
         final double costPerRow()
         {
             return cost().costPerRow();
@@ -1122,6 +1212,12 @@ abstract public class Plan
             this.source = keysIteration;
         }
 
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return source.ordering();
+        }
 
         @Override
         protected ControlFlow forEachSubplan(Function<Plan, ControlFlow> function)
@@ -1170,6 +1266,13 @@ abstract public class Plan
             this.targetSelectivity = targetSelectivity;
         }
 
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return source.ordering();
+        }
+
         @Override
         protected ControlFlow forEachSubplan(Function<Plan, ControlFlow> function)
         {
@@ -1213,6 +1316,13 @@ abstract public class Plan
             super(factory, id);
             this.source = source;
             this.limit = limit;
+        }
+
+        @Nullable
+        @Override
+        protected Orderer ordering()
+        {
+            return source.ordering();
         }
 
         @Override
@@ -1274,34 +1384,34 @@ abstract public class Plan
         }
 
         /**
-         * Constructs a plan node representing a direct scan of a numeric index.
-         * @param predicate the expression matching the rows that we want to search in the index;
-         *                  this is needed for identifying this node, it doesn't affect the cost
+         * Constructs a plan node representing a direct scan of an index.
+         *
+         * @param predicate         the expression matching the rows that we want to search in the index;
+         *                          this is needed for identifying this node, it doesn't affect the cost
          * @param matchingKeysCount the number of row keys expected to be returned by the index scan,
-         *                        i.e. keys of rows that match the search predicate
+         *                          i.e. keys of rows that match the search predicate
          */
-        public KeysIteration numericIndexScan(Expression predicate, long matchingKeysCount)
+        public KeysIteration indexScan(@Nullable Expression predicate, long matchingKeysCount)
         {
-            Preconditions.checkNotNull(predicate, "predicate must not be null");
             Preconditions.checkArgument(matchingKeysCount >= 0, "matchingKeyCount must not be negative");
             Preconditions.checkArgument(matchingKeysCount <= tableMetrics.rows, "matchingKeyCount must not exceed totalKeyCount");
-            return new NumericIndexScan(this, nextId++, predicate, matchingKeysCount);
+            return indexScan(predicate, matchingKeysCount, null, nextId++);
         }
 
-        /**
-         * Constructs a plan node representing a direct scan of a literal index.
-         *
-         * @param predicate the expression matching the rows that we want to search in the index;
-         *                  this is needed for identifying this node, it doesn't affect the cost
-         * @param matchingKeysCount the number of row keys expected to be returned by the index scan,
-         *                        i.e. keys of rows that match the search predicate - this affects the cost estimates
-         */
-        public KeysIteration literalIndexScan(Expression predicate, long matchingKeysCount)
+        private KeysIteration indexScan(Expression predicate, long matchingKeysCount, Orderer ordering, int id)
         {
-            Preconditions.checkNotNull(predicate, "predicate must not be null");
-            Preconditions.checkArgument(matchingKeysCount >= 0, "matchingKeyCount must not be negative");
-            Preconditions.checkArgument(matchingKeysCount <= tableMetrics.rows, "matchingKeyCount must not exceed totalKeyCount");
-            return new LiteralIndexScan(this, nextId++, predicate, matchingKeysCount);
+            if (predicate == null && ordering == null)
+            {
+                assert matchingKeysCount == tableMetrics.rows;
+                return everything;
+            }
+
+            if (ordering != null && ordering.isANN())
+                return new AnnIndexScan(this, id, ordering);
+
+            return (predicate != null && predicate.isLiteral() || ordering != null && ordering.isLiteral())
+                   ? new LiteralIndexScan(this, id, predicate, ordering, matchingKeysCount)
+                   : new NumericIndexScan(this, id, predicate, ordering, matchingKeysCount);
         }
 
         /**
@@ -1362,27 +1472,18 @@ abstract public class Plan
         }
 
         /**
-         * Constructs a node that sorts keys using DiskANN index
+         * Constructs a node that sorts keys using an index
          */
-        public KeysIteration sort(KeysIteration source, Orderer ordering)
+        public KeysIteration sort(@Nonnull KeysIteration source, @Nonnull Orderer ordering)
         {
-            // VSTODO use different calculations depending on the column type being ordered.
-            return annSort(source, ordering, nextId++);
+            return sort(source, ordering, nextId++);
         }
 
-        private KeysIteration annSort(@Nonnull KeysIteration source, @Nonnull Orderer ordering, int id)
+        private KeysIteration sort(@Nonnull KeysIteration source, @Nonnull Orderer ordering, int id)
         {
             return (source instanceof Everything)
-                ? new AnnScan(this, id, ordering)
-                : new AnnSort(this, id, source, ordering);
-        }
-
-        /**
-         * Constructs a node that scans the DiskANN index and returns key in ANN order
-         */
-        public KeysIteration annScan(@Nonnull Orderer ordering)
-        {
-            return new AnnScan(this, nextId++, ordering);
+                   ? indexScan(null, tableMetrics.rows, ordering, id)
+                   : new KeysSort(this, id, source, ordering);
         }
 
         /**

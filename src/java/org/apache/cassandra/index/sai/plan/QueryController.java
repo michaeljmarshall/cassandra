@@ -40,7 +40,6 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.schema.IndexTarget;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataRange;
@@ -319,9 +318,9 @@ public class QueryController implements Plan.Executor
                         ? optimizedPlan.limitIntersectedClauses(RangeIntersectionIterator.INTERSECTION_CLAUSE_LIMIT)
                         : optimizedPlan;
 
-        if (optimizedPlan.contains(node -> node instanceof Plan.AnnScan))
+        if (optimizedPlan.contains(node -> node instanceof Plan.AnnIndexScan))
             queryContext.setFilterSortOrder(QueryContext.FilterSortOrder.SORT_THEN_FILTER);
-        if (optimizedPlan.contains(node -> node instanceof Plan.AnnSort))
+        if (optimizedPlan.contains(node -> node instanceof Plan.KeysSort))
             queryContext.setFilterSortOrder(QueryContext.FilterSortOrder.FILTER_THEN_SORT);
 
         if (logger.isTraceEnabled())
@@ -437,9 +436,7 @@ public class QueryController implements Plan.Executor
                 keyIterators.put(predicate, iterator);
 
                 long keysCount = Math.min(iterator.getMaxKeys(), planFactory.tableMetrics.rows);
-                Plan.KeysIteration plan = predicate.isLiteral()
-                                          ? planFactory.literalIndexScan(predicate, keysCount)
-                                          : planFactory.numericIndexScan(predicate, keysCount);
+                Plan.KeysIteration plan = planFactory.indexScan(predicate, keysCount);
                 builder.add(plan);
             }
         }
