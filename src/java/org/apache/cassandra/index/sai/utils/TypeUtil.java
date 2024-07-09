@@ -338,7 +338,7 @@ public class TypeUtil
         return isBigInteger(type)
                || isBigDecimal(type)
                || (!isComposite(type) && isFrozen(type))
-               || (isComposite(type) && !Version.LATEST.onOrAfter(Version.DB));
+               || (isComposite(type) && !Version.latest().onOrAfter(Version.DB));
     }
 
     public static float[] decomposeVector(AbstractType<?> type, ByteBuffer byteBuffer)

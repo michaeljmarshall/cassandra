@@ -32,7 +32,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
 import org.slf4j.Logger;
@@ -43,6 +42,7 @@ import io.github.jbellis.jvector.util.Bits;
 import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
+import org.agrona.collections.IntHashSet;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
@@ -50,10 +50,11 @@ import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.IndexComponents;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.memory.MemtableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Plan;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
@@ -251,26 +252,37 @@ public class VectorMemtableIndex implements MemtableIndex
             // This case implies maximumKey is empty too.
             return CloseableIterator.emptyIterator();
 
-        var qv = vts.createFloatVector(exp.lower.value.vector);
-        List<PrimaryKey> keysInRange = keys.stream()
-                                           .dropWhile(k -> k.compareTo(minimumKey) < 0)
-                                           .takeWhile(k -> k.compareTo(maximumKey) <= 0)
-                                           .collect(Collectors.toList());
-
-        int maxBruteForceRows = maxBruteForceRows(limit, keysInRange.size(), graph.size());
-        logger.trace("SAI materialized {} rows; max brute force rows is {} for memtable index with {} nodes, LIMIT {}",
-                     keysInRange.size(), maxBruteForceRows, graph.size(), limit);
-        Tracing.trace("SAI materialized {} rows; max brute force rows is {} for memtable index with {} nodes, LIMIT {}",
-                      keysInRange.size(), maxBruteForceRows, graph.size(), limit);
-        if (keysInRange.size() <= maxBruteForceRows)
+        // Compute the keys that exist in the current memtable and their corresponding graph ordinals
+        var keysInGraph = new HashSet<PrimaryKey>();
+        var relevantOrdinals = new IntHashSet();
+        keys.stream()
+            .dropWhile(k -> k.compareTo(minimumKey) < 0)
+            .takeWhile(k -> k.compareTo(maximumKey) <= 0)
+            .forEach(k ->
         {
-            if (keysInRange.isEmpty())
-                return CloseableIterator.emptyIterator();
-            return orderByBruteForce(qv, keysInRange);
-        }
+            var v = graph.vectorForKey(k);
+            if (v == null)
+                return;
+            var i = graph.getOrdinal(v);
+            keysInGraph.add(k);
+            relevantOrdinals.add(i);
+        });
 
-        var bits = new KeyFilteringBits(keysInRange);
-        var nodeScoreIterator = graph.search(context, qv, limit, 0, bits);
+        int maxBruteForceRows = maxBruteForceRows(limit, relevantOrdinals.size(), graph.size());
+        Tracing.logAndTrace(logger, "{} rows relevant to current memtable out of {} materialized by SAI; max brute force rows is {} for memtable index with {} nodes, LIMIT {}",
+                            relevantOrdinals.size(), keys.size(), maxBruteForceRows, graph.size(), limit);
+
+        // convert the expression value to query vector
+        var qv = vts.createFloatVector(exp.lower.value.vector);
+        // brute force path
+        if (keysInGraph.size() <= maxBruteForceRows)
+        {
+            if (keysInGraph.isEmpty())
+                return CloseableIterator.emptyIterator();
+            return orderByBruteForce(qv, keysInGraph);
+        }
+        // indexed path
+        var nodeScoreIterator = graph.search(context, qv, limit, 0, relevantOrdinals::contains);
         return new NodeScoreToScoredPrimaryKeyIterator(nodeScoreIterator);
     }
 
@@ -319,13 +331,13 @@ public class VectorMemtableIndex implements MemtableIndex
     private int maxBruteForceRows(int limit, int nPermittedOrdinals, int graphSize)
     {
         int expectedNodesVisited = expectedNodesVisited(limit, nPermittedOrdinals, graphSize);
-        int expectedComparisons = indexContext.getIndexWriterConfig().getMaximumNodeConnections() * expectedNodesVisited;
-        // in-memory comparisons are cheaper than pulling a row off disk and then comparing
-        // VSTODO this is dramatically oversimplified
-        // larger dimension should increase this, because comparisons are more expensive
-        // lower chunk cache hit ratio should decrease this, because loading rows is more expensive
-        double memoryToDiskFactor = 0.25;
-        return (int) min(max(limit, memoryToDiskFactor * expectedComparisons), GLOBAL_BRUTE_FORCE_ROWS);
+        int expectedComparisons = indexContext.getIndexWriterConfig().getAnnMaxDegree() * expectedNodesVisited;
+        return (int) min(max(limit, Plan.memoryToDiskFactor() * expectedComparisons), GLOBAL_BRUTE_FORCE_ROWS);
+    }
+
+    public int estimateAnnNodesVisited(int limit, int nPermittedOrdinals)
+    {
+        return expectedNodesVisited(limit, nPermittedOrdinals, graph.size());
     }
 
     /**
@@ -375,9 +387,9 @@ public class VectorMemtableIndex implements MemtableIndex
         return graph.size();
     }
 
-    public SegmentMetadata.ComponentMetadataMap writeData(IndexDescriptor indexDescriptor, Set<Integer> deletedOrdinals) throws IOException
+    public SegmentMetadata.ComponentMetadataMap writeData(IndexComponents.ForWrite perIndexComponents, Set<Integer> deletedOrdinals) throws IOException
     {
-        return graph.flush(indexDescriptor, deletedOrdinals);
+        return graph.flush(perIndexComponents, deletedOrdinals);
     }
 
     @Override
@@ -468,31 +480,6 @@ public class VectorMemtableIndex implements MemtableIndex
         }
     }
 
-    private class KeyFilteringBits implements Bits
-    {
-        private final Set<PrimaryKey> results;
-
-        /**
-         * A {@link Bits} implementation that filters out all ordinals that do not correspond to a {@link PrimaryKey}
-         * in the provided list.
-         * @param results - an ordered list of {@link PrimaryKey}s
-         */
-        public KeyFilteringBits(List<PrimaryKey> results)
-        {
-            this.results = new HashSet<>(results);
-        }
-
-        @Override
-        public boolean get(int i)
-        {
-            var pks = graph.keysFromOrdinal(i);
-            for (var pk : pks)
-                if (results.contains(pk))
-                    return true;
-            return false;
-        }
-    }
-
     /**
      * An iterator over {@link ScoredPrimaryKey} sorted by score descending. The iterator converts ordinals (node ids)
      * to {@link PrimaryKey}s and pairs them with the score given by the index.
@@ -526,5 +513,11 @@ public class VectorMemtableIndex implements MemtableIndex
 
             return endOfData();
         }
+    }
+
+    /** ensures that the graph is connected -- normally not necessary but it can help tests reason about the state */
+    public void cleanup()
+    {
+        graph.cleanup();
     }
 }

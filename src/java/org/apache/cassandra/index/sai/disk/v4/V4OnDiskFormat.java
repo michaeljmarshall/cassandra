@@ -44,7 +44,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
                                           SegmentMetadata segmentMetadata) throws IOException
     {
         if (indexContext.isLiteral())
-            return new V4InvertedIndexSearcher(sstableContext.primaryKeyMapFactory(), indexFiles, segmentMetadata, sstableContext.indexDescriptor, indexContext);
+            return new V4InvertedIndexSearcher(sstableContext, indexFiles, segmentMetadata, indexContext);
         return super.newIndexSearcher(sstableContext, indexContext, indexFiles, segmentMetadata);
     }
 

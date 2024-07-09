@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.github.jbellis.jvector.pq.CompressedVectors;
+import io.github.jbellis.jvector.pq.ProductQuantization;
 import io.github.jbellis.jvector.util.BitSet;
 import io.github.jbellis.jvector.util.Bits;
 import io.github.jbellis.jvector.util.SparseBits;
@@ -38,6 +39,7 @@ import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
 import org.agrona.collections.IntArrayList;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
@@ -46,17 +48,19 @@ import org.apache.cassandra.index.sai.disk.IndexSearcherContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyWithSource;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.v1.IndexSearcher;
 import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.v1.postings.VectorPostingList;
 import org.apache.cassandra.index.sai.disk.v2.hnsw.CassandraOnDiskHnsw;
+import org.apache.cassandra.index.sai.disk.v3.CassandraDiskAnn;
 import org.apache.cassandra.index.sai.disk.vector.BruteForceRowIdIterator;
 import org.apache.cassandra.index.sai.disk.vector.JVectorLuceneOnDiskGraph;
 import org.apache.cassandra.index.sai.disk.vector.ScoredRowId;
+import org.apache.cassandra.index.sai.disk.vector.VectorCompression;
 import org.apache.cassandra.index.sai.disk.vector.VectorMemtableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.index.sai.plan.Plan;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PriorityQueueIterator;
 import org.apache.cassandra.index.sai.utils.RangeIterator;
@@ -82,6 +86,11 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final VectorTypeSupport vts = VectorizationProvider.getInstance().getVectorTypeSupport();
     public static int GLOBAL_BRUTE_FORCE_ROWS = Integer.MAX_VALUE; // not final so test can inject its own setting
+    /**
+     * How much more expensive is brute forcing the comparisons than going through the index?
+     * (brute force needs to go through the full read path to pull out the vectors from the row)
+     */
+    public static double BRUTE_FORCE_EXPENSE_FACTOR = DatabaseDescriptor.getAnnBruteForceExpenseFactor();
 
     protected final JVectorLuceneOnDiskGraph graph;
     private final PrimaryKey.Factory keyFactory;
@@ -91,13 +100,11 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     public V2VectorIndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
                                  PerIndexFiles perIndexFiles,
                                  SegmentMetadata segmentMetadata,
-                                 IndexDescriptor indexDescriptor,
                                  IndexContext indexContext) throws IOException
     {
         this(primaryKeyMapFactory,
              perIndexFiles,
              segmentMetadata,
-             indexDescriptor,
              indexContext,
              new CassandraOnDiskHnsw(segmentMetadata.componentMetadatas, perIndexFiles, indexContext));
     }
@@ -105,11 +112,10 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
     protected V2VectorIndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
                                     PerIndexFiles perIndexFiles,
                                     SegmentMetadata segmentMetadata,
-                                    IndexDescriptor indexDescriptor,
                                     IndexContext indexContext,
                                     JVectorLuceneOnDiskGraph graph)
     {
-        super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext);
+        super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexContext);
         this.graph = graph;
         this.keyFactory = PrimaryKey.factory(indexContext.comparator(), indexContext.indexFeatureSet());
         cachedBits = ThreadLocal.withInitial(SparseBits::new);
@@ -121,9 +127,14 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         return graph.ramBytesUsed();
     }
 
-    public CompressedVectors getCompressedVectors()
+    public VectorCompression getCompression()
     {
-        return graph.getCompressedVectors();
+        return graph.getCompression();
+    }
+
+    public ProductQuantization getPQ()
+    {
+        return ((CassandraDiskAnn) graph).getPQ();
     }
 
     @Override
@@ -157,7 +168,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         if (exp.getOp() != Expression.Op.ANN)
             throw new IllegalArgumentException(indexContext.logMessage("Unsupported expression during ANN index query: " + exp));
 
-        int rerankK = indexContext.getIndexWriterConfig().getSourceModel().rerankKFor(limit, graph.getCompressedVectors());
+        int rerankK = indexContext.getIndexWriterConfig().getSourceModel().rerankKFor(limit, graph.getCompression());
         var queryVector = vts.createFloatVector(exp.lower.value.vector);
 
         var result = searchInternal(keyRange, context, queryVector, limit, rerankK, 0);
@@ -200,7 +211,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
             if (minSSTableRowId > maxSSTableRowId)
                 return CloseableIterator.emptyIterator();
 
-            // if it covers entire segment, skip bit set
+            // if the range covers the entire segment, skip directly to an index search
             if (minSSTableRowId <= metadata.minSSTableRowId && maxSSTableRowId >= metadata.maxSSTableRowId)
                 return graph.search(queryVector, limit, rerankK, threshold, Bits.ALL, context, context::addAnnNodesVisited);
 
@@ -210,9 +221,9 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
             // Upper-bound cost based on maximum possible rows included
             int nRows = Math.toIntExact(maxSSTableRowId - minSSTableRowId + 1);
             var initialCostEstimate = estimateCost(rerankK, nRows);
-            Tracing.logAndTrace(logger, "Search range covers {} rows; expected nodes visited is {} for sstable index with {} nodes, LIMIT {}",
-                                nRows, initialCostEstimate.expectedNodesVisited, graph.size(), rerankK);
-            // if we have a small number of results then let TopK processor do exact NN computation
+            Tracing.logAndTrace(logger, "Search range covers {} rows in index of {} nodes; estimate for LIMIT {} is {}",
+                                nRows, graph.size(), rerankK, initialCostEstimate);
+            // if the range spans a small number of rows, then generate scores from the sstable rows instead of searching the index
             if (initialCostEstimate.shouldUseBruteForce())
             {
                 var segmentRowIds = new IntArrayList(nRows, 0);
@@ -233,20 +244,20 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
             {
                 int startSegmentRowId = metadata.toSegmentRowId(minSSTableRowId);
                 int endSegmentRowId = metadata.toSegmentRowId(maxSSTableRowId);
-
                 bits = ordinalsView.buildOrdinalBits(startSegmentRowId, endSegmentRowId, this::bitSetForSearch);
             }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
-            }
-
+            // the set of ordinals may be empty if no rows in the range had a vector associated with them
             int cardinality = bits instanceof SparseBits ? ((SparseBits) bits).cardinality() : ((BitSet) bits).cardinality();
-            // We can make a more accurate cost estimate now
-            var betterCostEstimate = estimateCost(rerankK, cardinality);
-
             if (cardinality == 0)
                 return CloseableIterator.emptyIterator();
+            // Rows are many-to-one wrt index ordinals, so the actual number of ordinals involved (`cardinality`)
+            // could be less than the number of rows in the range (`nRows`).  In that case we should update the cost
+            // so that we don't pollute the planner with incorrectly pessimistic estimates.
+            //
+            // Technically, we could also have another `shouldUseBruteForce` branch here, but we don't have
+            // the code to generate rowids from ordinals, and it's a rare enough case that it doesn't seem worth
+            // the trouble to add it.
+            var betterCostEstimate = estimateCost(rerankK, cardinality);
 
             return graph.search(queryVector, limit, rerankK, threshold, bits, context, visited -> {
                 betterCostEstimate.updateStatistics(visited);
@@ -274,11 +285,9 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
 
     private CloseableIterator<ScoredRowId> orderByBruteForce(VectorFloat<?> queryVector, IntArrayList segmentRowIds, int limit, int rerankK) throws IOException
     {
-        // If we use compressed vectors, we still have to order the rerankK results using full resolution similarity
+        // If we use compressed vectors, we still have to order rerankK results using full resolution similarity
         // scores, so only use the compressed vectors when there are enough vectors to make it worthwhile.
-        // VSTODO is there a multiplier for rerankK that makes sense? Does it depend on vector length? Further
-        // testing needed. Initial testing suggests the difference in these two paths is less than a millisecond.
-        if (graph.getCompressedVectors() != null && segmentRowIds.size() > rerankK)
+        if (graph.getCompressedVectors() != null && segmentRowIds.size() - rerankK > Plan.memoryToDiskFactor() * segmentRowIds.size())
             return orderByBruteForce(graph.getCompressedVectors(), queryVector, segmentRowIds, limit, rerankK);
         return orderByBruteForce(queryVector, segmentRowIds);
     }
@@ -297,7 +306,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         var approximateScores = new PriorityQueue<BruteForceRowIdIterator.RowWithApproximateScore>(segmentRowIds.size(),
                                                                                                    (a, b) -> Float.compare(b.getApproximateScore(), a.getApproximateScore()));
         var similarityFunction = indexContext.getIndexWriterConfig().getSimilarityFunction();
-        var scoreFunction = cv.scoreFunctionFor(queryVector, similarityFunction);
+        var scoreFunction = cv.precomputedScoreFunctionFor(queryVector, similarityFunction);
 
         try (var ordinalsView = graph.getOrdinalsView())
         {
@@ -382,27 +391,30 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
 
     private class CostEstimate
     {
-        public final int nFilteredRows;
-        public final int rawExpectedNodesVisited;
-        public final int expectedNodesVisited;
+        private final int candidates;
+        private final int rawExpectedNodesVisited;
+        private final int expectedNodesVisited;
 
-        public CostEstimate(int nFilteredRows, int rawExpectedNodesVisited, int expectedNodesVisited)
+        public CostEstimate(int candidates, int rawExpectedNodesVisited, int expectedNodesVisited)
         {
             assert rawExpectedNodesVisited >= 0 : rawExpectedNodesVisited;
             assert expectedNodesVisited >= 0 : expectedNodesVisited;
 
-            this.nFilteredRows = nFilteredRows;
+            this.candidates = candidates;
             this.rawExpectedNodesVisited = rawExpectedNodesVisited;
             this.expectedNodesVisited = expectedNodesVisited;
         }
 
         public boolean shouldUseBruteForce()
         {
-            // ANN index will do a bunch of extra work besides the full comparisons (performing PQ similarity for each edge);
-            // brute force from sstable will also do a bunch of extra work (going through trie index to look up row).
-            // VSTODO I'm not sure which one is more expensive (and it depends on things like sstable chunk cache hit ratio)
-            // so I'm leaving it as a 1:1 ratio for now.
-            return nFilteredRows <= min(GLOBAL_BRUTE_FORCE_ROWS, expectedNodesVisited);
+            if (candidates > GLOBAL_BRUTE_FORCE_ROWS)
+                return false;
+            return bruteForceCost() <= expectedNodesVisited;
+        }
+
+        private int bruteForceCost()
+        {
+            return (int) (candidates * BRUTE_FORCE_EXPENSE_FACTOR);
         }
 
         public void updateStatistics(int actualNodesVisited)
@@ -414,11 +426,22 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
                 Tracing.logAndTrace(logger, "Predicted visiting {} nodes, but actually visited {}",
                                     expectedNodesVisited, actualNodesVisited);
         }
+
+        @Override
+        public String toString()
+        {
+            return String.format("{brute force: %d, index scan: %d}", bruteForceCost(), expectedNodesVisited);
+        }
     }
 
-    private CostEstimate estimateCost(int limit, int nFilteredRows)
+    public int estimateNodesVisited(int limit, int candidates)
     {
-        int rawExpectedNodes = getRawExpectedNodes(limit, nFilteredRows);
+        return estimateCost(limit, candidates).expectedNodesVisited;
+    }
+
+    private CostEstimate estimateCost(int limit, int candidates)
+    {
+        int rawExpectedNodes = getRawExpectedNodes(limit, candidates);
         // update the raw expected value with a linear interpolation based on observed data
         var observedValues = expectedActualNodesVisited.getSnapshot().values;
         int expectedNodes;
@@ -433,7 +456,7 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         }
 
         int sanitizedEstimate = VectorMemtableIndex.ensureSaneEstimate(expectedNodes, limit, graph.size());
-        return new CostEstimate(nFilteredRows, rawExpectedNodes, sanitizedEstimate);
+        return new CostEstimate(candidates, rawExpectedNodes, sanitizedEstimate);
     }
 
     private SparseBits bitSetForSearch()
@@ -476,15 +499,15 @@ public class V2VectorIndexSearcher extends IndexSearcher implements SegmentOrder
         if (keysInRange.isEmpty())
             return CloseableIterator.emptyIterator();
 
-        int rerankK = indexContext.getIndexWriterConfig().getSourceModel().rerankKFor(limit, graph.getCompressedVectors());
+        int rerankK = indexContext.getIndexWriterConfig().getSourceModel().rerankKFor(limit, graph.getCompression());
         // Convert PKs to segment row ids and then to ordinals, skipping any that don't exist in this segment
         var bitsAndRows = flatmapPrimaryKeysToBitsAndRows(keysInRange);
         var bits = bitsAndRows.left;
         var rowIds = bitsAndRows.right;
         var numRows = rowIds.size();
         final CostEstimate cost = estimateCost(rerankK, numRows);
-        Tracing.logAndTrace(logger, "{} rows relevant to current sstable out of {} in range; expected nodes visited is {} for index with {} nodes, LIMIT {}",
-                            numRows, keysInRange.size(), cost.expectedNodesVisited, graph.size(), limit);
+        Tracing.logAndTrace(logger, "{} relevant rows out of {} in range in index of {} nodes; estimate for LIMIT {} is {}",
+                            numRows, keysInRange.size(), graph.size(), limit, cost);
         if (numRows == 0)
             return CloseableIterator.emptyIterator();
 

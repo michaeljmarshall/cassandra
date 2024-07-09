@@ -21,8 +21,7 @@ package org.apache.cassandra.index.sai.disk.v4;
 import java.io.IOException;
 
 import org.apache.cassandra.index.sai.IndexContext;
-import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.v1.InvertedIndexSearcher;
 import org.apache.cassandra.index.sai.disk.v1.PerIndexFiles;
@@ -33,12 +32,11 @@ import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
  */
 public class V4InvertedIndexSearcher extends InvertedIndexSearcher
 {
-    V4InvertedIndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
+    V4InvertedIndexSearcher(SSTableContext sstableContext,
                             PerIndexFiles perIndexFiles,
                             SegmentMetadata segmentMetadata,
-                            IndexDescriptor indexDescriptor,
                             IndexContext indexContext) throws IOException
     {
-        super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext, Version.DB, false);
+        super(sstableContext, perIndexFiles, segmentMetadata, indexContext, Version.DB, false);
     }
 }

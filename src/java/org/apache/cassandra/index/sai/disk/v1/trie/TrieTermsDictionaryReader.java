@@ -41,9 +41,9 @@ public class TrieTermsDictionaryReader extends ValueIterator<TrieTermsDictionary
 {
     public static final long NOT_FOUND = -1;
 
-    public TrieTermsDictionaryReader(Rebufferer rebufferer, long root)
+    public TrieTermsDictionaryReader(Rebufferer rebufferer, long root, ByteComparable.Version version)
     {
-        super(rebufferer, root, true);
+        super(rebufferer, root, true, version);
     }
 
     /**
@@ -54,9 +54,10 @@ public class TrieTermsDictionaryReader extends ValueIterator<TrieTermsDictionary
                                      ByteComparable start,
                                      ByteComparable end,
                                      boolean inclStart,
-                                     boolean collecting)
+                                     boolean collecting,
+                                     ByteComparable.Version version)
     {
-        super(source, root, start, end, inclStart ? LeftBoundTreatment.ADMIT_EXACT : LeftBoundTreatment.GREATER, collecting);
+        super(source, root, start, end, inclStart ? LeftBoundTreatment.ADMIT_EXACT : LeftBoundTreatment.GREATER, collecting, version);
     }
 
     public static final TrieSerializer<Long, DataOutputPlus> trieSerializer = new TrieSerializer<>()

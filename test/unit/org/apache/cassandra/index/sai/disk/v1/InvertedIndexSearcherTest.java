@@ -19,7 +19,6 @@ package org.apache.cassandra.index.sai.disk.v1;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -37,6 +36,7 @@ import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SAITester;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.MemtableTermsIterator;
+import org.apache.cassandra.index.sai.disk.format.IndexComponents;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.KDTreeIndexBuilder;
@@ -147,7 +147,7 @@ public class InvertedIndexSearcherTest extends SaiRandomizedTest
     public void testUnsupportedOperator() throws Exception
     {
         final int numTerms = randomIntBetween(5, 15), numPostings = randomIntBetween(5, 20);
-        final List<InvertedIndexBuilder.TermsEnum> termsEnum = buildTermsEnum(Version.LATEST, numTerms, numPostings);
+        final List<InvertedIndexBuilder.TermsEnum> termsEnum = buildTermsEnum(Version.latest(), numTerms, numPostings);
 
         try (IndexSearcher searcher = buildIndexAndOpenSearcher(numTerms, numPostings, termsEnum))
         {
@@ -170,7 +170,8 @@ public class InvertedIndexSearcherTest extends SaiRandomizedTest
         final IndexContext indexContext = SAITester.createIndexContext(index, UTF8Type.instance);
 
         SegmentMetadata.ComponentMetadataMap indexMetas;
-        try (InvertedIndexWriter writer = new InvertedIndexWriter(indexDescriptor, indexContext))
+        IndexComponents.ForWrite components = indexDescriptor.newPerIndexComponentsForWrite(indexContext);
+        try (InvertedIndexWriter writer = new InvertedIndexWriter(components))
         {
             var iter = termsEnum.stream().map(InvertedIndexBuilder.TermsEnum::toPair).iterator();
             indexMetas = writer.writeAll(new MemtableTermsIterator(null, null, iter));
@@ -186,15 +187,15 @@ public class InvertedIndexSearcherTest extends SaiRandomizedTest
                                                                     termsEnum.get(terms - 1).originalTermBytes,
                                                                     indexMetas);
 
-        try (PerIndexFiles indexFiles = new PerIndexFiles(indexDescriptor, indexContext))
+        try (PerIndexFiles indexFiles = new PerIndexFiles(components))
         {
             SSTableContext sstableContext = mock(SSTableContext.class);
             when(sstableContext.primaryKeyMapFactory()).thenReturn(KDTreeIndexBuilder.TEST_PRIMARY_KEY_MAP_FACTORY);
-            when(sstableContext.indexDescriptor()).thenReturn(indexDescriptor);
-            final IndexSearcher searcher = version.onDiskFormat().newIndexSearcher(sstableContext,
-                                                                                   SAITester.createIndexContext(index, UTF8Type.instance),
-                                                                                   indexFiles,
-                                                                                   segmentMetadata);
+            when(sstableContext.usedPerSSTableComponents()).thenReturn(indexDescriptor.perSSTableComponents());
+            final IndexSearcher searcher = Version.latest().onDiskFormat().newIndexSearcher(sstableContext,
+                                                                                          SAITester.createIndexContext(index, UTF8Type.instance),
+                                                                                          indexFiles,
+                                                                                          segmentMetadata);
             assertThat(searcher, is(instanceOf(InvertedIndexSearcher.class)));
             return searcher;
         }

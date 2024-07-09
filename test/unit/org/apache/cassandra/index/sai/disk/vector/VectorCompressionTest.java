@@ -102,7 +102,7 @@ public class VectorCompressionTest extends VectorTester
     {
         // with fewer than MIN_PQ_ROWS we expect to observe no compression no matter
         // what the source model would prefer
-        testOne(1, VectorSourceModel.OTHER, 200, new VectorCompression(NONE, 200 * Float.BYTES));
+        testOne(1, VectorSourceModel.OTHER, 200, VectorCompression.NO_COMPRESSION);
     }
 
     private void testOne(VectorSourceModel model, int originalDimension, VectorCompression expectedCompression) throws IOException
@@ -113,16 +113,18 @@ public class VectorCompressionTest extends VectorTester
     private void testOne(int rows, VectorSourceModel model, int originalDimension, VectorCompression expectedCompression) throws IOException
     {
         createTable("CREATE TABLE %s " + String.format("(pk int, v vector<float, %d>, PRIMARY KEY(pk))", originalDimension));
-        createIndex("CREATE CUSTOM INDEX ON %s(v) " + String.format("USING 'StorageAttachedIndex' WITH OPTIONS = {'source_model': '%s'}", model));
-        waitForIndexQueryable();
 
         for (int i = 0; i < rows; i++)
-            execute("INSERT INTO %s (pk, v) VALUES (?, ?)", i, randomVector(originalDimension));
+            execute("INSERT INTO %s (pk, v) VALUES (?, ?)", i, randomVectorBoxed(originalDimension));
         flush();
         // the larger models may flush mid-test automatically, so compact to make sure that we
         // end up with a single sstable (otherwise PQ might conclude there aren't enough vectors to train on)
         compact();
         waitForCompactionsFinished();
+
+        // create index after compaction so we don't have to wait for it to (potentially) build twice
+        createIndex("CREATE CUSTOM INDEX ON %s(v) " + String.format("USING 'StorageAttachedIndex' WITH OPTIONS = {'source_model': '%s'}", model));
+        waitForIndexQueryable();
 
         // get a View of the sstables that contain indexed data
         var sim = getCurrentColumnFamilyStore().indexManager;
@@ -139,14 +141,13 @@ public class VectorCompressionTest extends VectorTester
         try (var segment = segments.iterator().next();
              var searcher = (V3VectorIndexSearcher) segment.getIndexSearcher())
         {
-            var cv = searcher.getCompressedVectors();
-            var msg = String.format("Expected %s but got %s", expectedCompression,
-                                    cv == null ? "NONE" : cv.getClass().getSimpleName() + '@' + cv.getCompressedSize());
-            assertTrue(msg, expectedCompression.matches(cv));
-            if (cv != null)
+            var vc = searcher.getCompression();
+            var msg = String.format("Expected %s but got %s", expectedCompression, vc);
+            assertEquals(msg, expectedCompression, vc);
+            if (vc.type != NONE)
             {
-                assertEquals((int) (100 * VectorSourceModel.tapered2x(100) * model.overqueryProvider.apply(cv)),
-                             model.rerankKFor(100, cv));
+                assertEquals((int) (100 * VectorSourceModel.tapered2x(100) * model.overqueryProvider.apply(vc)),
+                             model.rerankKFor(100, vc));
             }
         }
     }

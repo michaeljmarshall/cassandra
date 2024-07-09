@@ -1,4 +1,4 @@
-/*
+    /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -74,9 +74,11 @@ public class TermsReader implements Closeable
     private final FileHandle postingsFile;
     private final long termDictionaryRoot;
     private final Version version;
+    private final ByteComparable.Version termDictionaryFileEncodingVersion;
 
     public TermsReader(IndexContext indexContext,
                        FileHandle termsData,
+                       ByteComparable.Version termsDataEncodingVersion,
                        FileHandle postingLists,
                        long root,
                        long termsFooterPointer,
@@ -87,6 +89,7 @@ public class TermsReader implements Closeable
         termDictionaryFile = termsData;
         postingsFile = postingLists;
         termDictionaryRoot = root;
+        this.termDictionaryFileEncodingVersion = termsDataEncodingVersion;
 
         try (final IndexInput indexInput = IndexFileUtils.instance.openInput(termDictionaryFile))
         {
@@ -201,7 +204,7 @@ public class TermsReader implements Closeable
 
         public long lookupTermDictionary(ByteComparable term)
         {
-            try (TrieTermsDictionaryReader reader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot))
+            try (TrieTermsDictionaryReader reader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot, termDictionaryFileEncodingVersion))
             {
                 final long offset = reader.exactMatch(term);
 
@@ -253,7 +256,8 @@ public class TermsReader implements Closeable
                                                                                   lower,
                                                                                   upper,
                                                                                   true,
-                                                                                  exp != null))
+                                                                                  exp != null,
+                                                                                  termDictionaryFileEncodingVersion))
             {
                 if (!reader.hasNext())
                     return PostingList.EMPTY;
@@ -367,7 +371,8 @@ public class TermsReader implements Closeable
 
         private TermsScanner(long segmentOffset, Version version, AbstractType<?> type)
         {
-            this.termsDictionaryReader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot);
+            this.termsDictionaryReader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot, termDictionaryFileEncodingVersion);
+            // TODO now that we have termDictionaryFileEncodingVersion in the class, can we use it below?
             if (version.onOrAfter(Version.DB) && TypeUtil.isComposite(type))
             {
                 this.minTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMinTerm().asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);

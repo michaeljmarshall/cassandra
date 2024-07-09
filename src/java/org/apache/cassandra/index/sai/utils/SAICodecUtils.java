@@ -20,7 +20,7 @@ package org.apache.cassandra.index.sai.utils;
 import java.io.IOException;
 import java.io.OutputStream;
 
-import io.github.jbellis.jvector.disk.BufferedRandomAccessWriter;
+import io.github.jbellis.jvector.disk.RandomAccessWriter;
 import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.io.compress.CorruptBlockException;
 import org.apache.lucene.codecs.CodecUtil;
@@ -58,7 +58,7 @@ public class SAICodecUtils
     public static void writeHeader(DataOutput out) throws IOException
     {
         writeBEInt(out, CODEC_MAGIC);
-        out.writeString(Version.LATEST.toString());
+        out.writeString(Version.latest().toString());
     }
 
     public static int headerSize() {
@@ -74,7 +74,7 @@ public class SAICodecUtils
         writeCRC(out);
     }
 
-    public static void writeFooter(BufferedRandomAccessWriter braw, long checksum) throws IOException
+    public static void writeFooter(RandomAccessWriter braw, long checksum) throws IOException
     {
         var out = toLuceneOutput(braw);
         writeBEInt(out, FOOTER_MAGIC);
