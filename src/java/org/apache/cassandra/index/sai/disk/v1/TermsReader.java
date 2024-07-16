@@ -328,7 +328,7 @@ public class TermsReader implements Closeable
             do
             {
                 Pair<ByteComparable, Long> nextTriePair = reader.next();
-                ByteSource mapEntry = nextTriePair.left.asComparableBytes(ByteComparable.Version.OSS41);
+                ByteSource mapEntry = nextTriePair.left.asComparableBytes(termDictionaryFileEncodingVersion);
                 long postingsOffset = nextTriePair.right;
                 byte[] nextBytes = ByteSourceInverse.readBytes(mapEntry);
 
@@ -372,16 +372,16 @@ public class TermsReader implements Closeable
         private TermsScanner(long segmentOffset, Version version, AbstractType<?> type)
         {
             this.termsDictionaryReader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot, termDictionaryFileEncodingVersion);
-            // TODO now that we have termDictionaryFileEncodingVersion in the class, can we use it below?
+            // We decode based on the logic used to encode the min and max terms in the trie.
             if (version.onOrAfter(Version.DB) && TypeUtil.isComposite(type))
             {
-                this.minTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMinTerm().asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
-                this.maxTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMaxTerm().asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
+                this.minTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMinTerm().asPeekableBytes(termDictionaryFileEncodingVersion), termDictionaryFileEncodingVersion);
+                this.maxTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMaxTerm().asPeekableBytes(termDictionaryFileEncodingVersion), termDictionaryFileEncodingVersion);
             }
             else
             {
-                this.minTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMinTerm().asComparableBytes(ByteComparable.Version.OSS41)));
-                this.maxTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMaxTerm().asComparableBytes(ByteComparable.Version.OSS41)));
+                this.minTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMinTerm().asComparableBytes(termDictionaryFileEncodingVersion)));
+                this.maxTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMaxTerm().asComparableBytes(termDictionaryFileEncodingVersion)));
             }
             this.segmentOffset = segmentOffset;
         }

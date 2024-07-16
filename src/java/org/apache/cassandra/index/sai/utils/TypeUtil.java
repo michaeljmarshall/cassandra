@@ -331,10 +331,9 @@ public class TypeUtil
 
     private static boolean useFastByteOperations(AbstractType<?> type)
     {
-        // TODO when I remove isCompositeOrFrozen from this conditional, some failing tests pass. What
-        // additional test coverage do I need to validate this? Is it still valid for big int and decimal?
-        // BigInteger values, frozen types and composite types (map entries) use compareUnsigned to maintain
-        // a consistent order between the in-memory index and the on-disk index.
+        // BigInteger types, BigDecimal types, frozen types and composite types (map entries) use compareUnsigned to
+        // maintain a consistent order between the in-memory index and the on-disk index. Starting with Version.DB,
+        // composite types are compared using their AbstractType.
         return isBigInteger(type)
                || isBigDecimal(type)
                || (!isComposite(type) && isFrozen(type))

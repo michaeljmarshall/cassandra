@@ -215,7 +215,7 @@ public class SegmentFlushTest
                                                   postingLists,
                                                   segmentMetadata.componentMetadatas.get(IndexComponentType.TERMS_DATA).root,
                                                   termsFooterPointer,
-                                                  Version.CA))
+                                                  version))
         {
             TermsIterator iterator = reader.allTerms(0);
             assertEquals(minTerm, iterator.getMinTerm());
