@@ -37,7 +37,6 @@ import org.apache.cassandra.index.sai.disk.IndexSearcherContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.PostingListRangeIterator;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
@@ -65,7 +64,6 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
     protected final PrimaryKeyMap.Factory primaryKeyMapFactory;
     final PerIndexFiles indexFiles;
     protected final SegmentMetadata metadata;
-    final IndexDescriptor indexDescriptor;
     protected final IndexContext indexContext;
 
     private static final SSTableReadsListener NOOP_LISTENER = new SSTableReadsListener() {};
@@ -75,13 +73,11 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
     protected IndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
                             PerIndexFiles perIndexFiles,
                             SegmentMetadata segmentMetadata,
-                            IndexDescriptor indexDescriptor,
                             IndexContext indexContext)
     {
         this.primaryKeyMapFactory = primaryKeyMapFactory;
         this.indexFiles = perIndexFiles;
         this.metadata = segmentMetadata;
-        this.indexDescriptor = indexDescriptor;
         this.indexContext = indexContext;
         columnFilter = ColumnFilter.selection(RegularAndStaticColumns.of(indexContext.getDefinition()));
     }
@@ -137,7 +133,7 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
                         continue;
                     // We encode the bytes to make sure they compare correctly.
                     var byteComparable = encode(cell.buffer());
-                    pq.add(new PrimaryKeyWithByteComparable(indexContext, indexDescriptor.descriptor.id, key, byteComparable));
+                    pq.add(new PrimaryKeyWithByteComparable(indexContext, reader.descriptor.id, key, byteComparable));
                 }
             }
         }
@@ -177,10 +173,11 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
                                                                         metadata.segmentRowIdOffset,
                                                                         queryContext,
                                                                         null);
+        var pkm = primaryKeyMapFactory.newPerSSTablePrimaryKeyMap();
         return new RowIdToPrimaryKeyWithSortKeyIterator(indexContext,
-                                                        indexDescriptor.descriptor.id,
+                                                        pkm.getSSTableId(),
                                                         rowIdIterator,
-                                                        primaryKeyMapFactory.newPerSSTablePrimaryKeyMap(),
+                                                        pkm,
                                                         searcherContext);
     }
 }

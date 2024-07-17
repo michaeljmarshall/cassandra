@@ -35,6 +35,8 @@ import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.SearchableIndex;
+import org.apache.cassandra.index.sai.disk.format.IndexComponents;
+import org.apache.cassandra.index.sai.disk.v3.V3OnDiskFormat;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
@@ -47,6 +49,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.Throwables;
 
+import static java.lang.Math.max;
 import static org.apache.cassandra.index.sai.virtual.SegmentsSystemView.CELL_COUNT;
 import static org.apache.cassandra.index.sai.virtual.SegmentsSystemView.COLUMN_NAME;
 import static org.apache.cassandra.index.sai.virtual.SegmentsSystemView.COMPONENT_METADATA;
@@ -75,18 +78,18 @@ public class V1SearchableIndex implements SearchableIndex
     private final long numRows;
     private PerIndexFiles indexFiles;
 
-    public V1SearchableIndex(SSTableContext sstableContext, IndexContext indexContext)
+    public V1SearchableIndex(SSTableContext sstableContext, IndexComponents.ForRead perIndexComponents)
     {
-        this.indexContext = indexContext;
+        this.indexContext = perIndexComponents.context();
         try
         {
-            this.indexFiles = new PerIndexFiles(sstableContext.indexDescriptor, indexContext);
+            this.indexFiles = new PerIndexFiles(perIndexComponents);
 
             ImmutableList.Builder<Segment> segmentsBuilder = ImmutableList.builder();
 
-            final MetadataSource source = MetadataSource.loadColumnMetadata(sstableContext.indexDescriptor, indexContext);
+            final MetadataSource source = MetadataSource.loadMetadata(perIndexComponents);
 
-            metadatas = SegmentMetadata.load(source, sstableContext.indexDescriptor.primaryKeyFactory);
+            metadatas = SegmentMetadata.load(source, sstableContext.primaryKeyFactory());
 
             for (SegmentMetadata metadata : metadatas)
             {
@@ -187,14 +190,16 @@ public class V1SearchableIndex implements SearchableIndex
     public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderBy(Orderer orderer,
                                                                             AbstractBounds<PartitionPosition> keyRange,
                                                                             QueryContext context,
-                                                                            int limit) throws IOException
+                                                                            int limit,
+                                                                            long totalRows) throws IOException
     {
         var iterators = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(segments.size());
         for (Segment segment : segments)
         {
             if (segment.intersects(keyRange))
             {
-                iterators.add(segment.orderBy(orderer, keyRange, context, limit));
+                var segmentLimit = segment.proportionalAnnLimit(limit, totalRows);
+                iterators.add(segment.orderBy(orderer, keyRange, context, segmentLimit));
             }
         }
 
@@ -202,14 +207,15 @@ public class V1SearchableIndex implements SearchableIndex
     }
 
     @Override
-    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit) throws IOException
+    public List<CloseableIterator<? extends PrimaryKeyWithSortKey>> orderResultsBy(QueryContext context, List<PrimaryKey> keys, Orderer orderer, int limit, long totalRows) throws IOException
     {
         var results = new ArrayList<CloseableIterator<? extends PrimaryKeyWithSortKey>>(segments.size());
         for (Segment segment : segments)
         {
             // Only pass the primary keys in a segment's range to the segment index.
             var segmentKeys = getKeysInRange(keys, segment);
-            results.add(segment.orderResultsBy(context, segmentKeys, orderer, limit));
+            var segmentLimit = segment.proportionalAnnLimit(limit, totalRows);
+            results.add(segment.orderResultsBy(context, segmentKeys, orderer, segmentLimit));
         }
 
         return results;
