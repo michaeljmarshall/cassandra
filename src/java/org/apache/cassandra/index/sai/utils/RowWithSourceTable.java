@@ -25,6 +25,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 
@@ -43,6 +44,7 @@ import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.BiLongAccumulator;
 import org.apache.cassandra.utils.LongAccumulator;
+import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.SearchIterator;
 import org.apache.cassandra.utils.memory.Cloner;
 
@@ -52,6 +54,8 @@ import org.apache.cassandra.utils.memory.Cloner;
  */
 public class RowWithSourceTable implements Row
 {
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new RowWithSourceTable(null, null));
+
     private final Row row;
     private final Object source;
 
@@ -151,42 +155,37 @@ public class RowWithSourceTable implements Row
     @Override
     public Cell<?> getCell(ColumnMetadata c, CellPath path)
     {
-        var cell = row.getCell(c, path);
-        if (cell == null)
-            return null;
-        return new CellWithSourceTable<>(c, cell, source);
+        return wrapCell(row.getCell(c, path));
     }
 
     @Override
     public ComplexColumnData getComplexColumnData(ColumnMetadata c)
     {
-        return row.getComplexColumnData(c);
+        return (ComplexColumnData) wrapColumnData(row.getComplexColumnData(c));
     }
 
     @Override
     public ColumnData getColumnData(ColumnMetadata c)
     {
-        return row.getColumnData(c);
+        return wrapColumnData(row.getColumnData(c));
     }
 
     @Override
     public Iterable<Cell<?>> cells()
     {
-        return Iterables.transform(row.cells(), c -> c != null ? new CellWithSourceTable<>(c.column(), c, source)
-                                                               : null);
+        return Iterables.transform(row.cells(), this::wrapCell);
     }
 
     @Override
     public Collection<ColumnData> columnData()
     {
-        // TODO does this need to be wrapped?
-        return row.columnData();
+        return Collections2.transform(row.columnData(), this::wrapColumnData);
     }
 
     @Override
     public Iterable<Cell<?>> cellsInLegacyOrder(TableMetadata metadata, boolean reversed)
     {
-        return row.cellsInLegacyOrder(metadata, reversed);
+        return Iterables.transform(row.cellsInLegacyOrder(metadata, reversed), this::wrapCell);
     }
 
     @Override
@@ -210,68 +209,68 @@ public class RowWithSourceTable implements Row
     @Override
     public SearchIterator<ColumnMetadata, ColumnData> searchIterator()
     {
-        return row.searchIterator();
+        var iterator = row.searchIterator();
+        return key -> wrapColumnData(iterator.next(key));
     }
 
     @Override
     public Row filter(ColumnFilter filter, TableMetadata metadata)
     {
-        return new RowWithSourceTable(row.filter(filter, metadata), source);
+        return maybeWrapRow(row.filter(filter, metadata));
     }
 
     @Override
     public Row filter(ColumnFilter filter, DeletionTime activeDeletion, boolean setActiveDeletionToRow, TableMetadata metadata)
     {
-        return new RowWithSourceTable(row.filter(filter, activeDeletion, setActiveDeletionToRow, metadata), source);
+        return maybeWrapRow(row.filter(filter, activeDeletion, setActiveDeletionToRow, metadata));
     }
 
     @Override
     public Row transformAndFilter(LivenessInfo info, Deletion deletion, Function<ColumnData, ColumnData> function)
     {
-        return new RowWithSourceTable(row.transformAndFilter(info, deletion, function), source);
+        return maybeWrapRow(row.transformAndFilter(info, deletion, function));
     }
 
     @Override
     public Row transformAndFilter(Function<ColumnData, ColumnData> function)
     {
-        return new RowWithSourceTable(row.transformAndFilter(function), source);
+        return maybeWrapRow(row.transformAndFilter(function));
     }
 
     @Override
     public Row clone(Cloner cloner)
     {
-        // todo need me??
-        return new RowWithSourceTable(row.clone(cloner), source);
+        return maybeWrapRow(row.clone(cloner));
     }
 
     @Override
     public Row purge(DeletionPurger purger, int nowInSec, boolean enforceStrictLiveness)
     {
-        return new RowWithSourceTable(row.purge(purger, nowInSec, enforceStrictLiveness), source);
+        return maybeWrapRow(row.purge(purger, nowInSec, enforceStrictLiveness));
     }
 
     @Override
     public Row withOnlyQueriedData(ColumnFilter filter)
     {
-        return new RowWithSourceTable(row.withOnlyQueriedData(filter), source);
+        return maybeWrapRow(row.withOnlyQueriedData(filter));
     }
 
     @Override
     public Row markCounterLocalToBeCleared()
     {
-        return new RowWithSourceTable(row.markCounterLocalToBeCleared(), source);
+        return maybeWrapRow(row.markCounterLocalToBeCleared());
     }
 
     @Override
     public Row updateAllTimestamp(long newTimestamp)
     {
-        return new RowWithSourceTable(row.updateAllTimestamp(newTimestamp), source);
+        return maybeWrapRow(row.updateAllTimestamp(newTimestamp));
     }
 
     @Override
     public Row withRowDeletion(DeletionTime deletion)
     {
-        return new RowWithSourceTable(row.withRowDeletion(deletion), source);
+        return maybeWrapRow(row.withRowDeletion(deletion));
     }
 
     @Override
@@ -283,7 +282,7 @@ public class RowWithSourceTable implements Row
     @Override
     public long unsharedHeapSizeExcludingData()
     {
-        return row.unsharedHeapSizeExcludingData();
+        return row.unsharedHeapSizeExcludingData() + EMPTY_SIZE;
     }
 
     @Override
@@ -313,7 +312,6 @@ public class RowWithSourceTable implements Row
     @Override
     public void apply(Consumer<ColumnData> function)
     {
-        // todo me??
         row.apply(function);
     }
 
@@ -350,14 +348,31 @@ public class RowWithSourceTable implements Row
     @Override
     public Iterator<ColumnData> iterator()
     {
-        return Iterators.transform(row.iterator(), c -> {
-            if (c == null)
-                return null;
-            if (c instanceof Cell<?>)
-                return new CellWithSourceTable<>(c.column(), (Cell<?>) c, source);
-            if (c instanceof ComplexColumnData)
-                return ((ComplexColumnData) c).transform(c1 -> new CellWithSourceTable<>(c1.column(), c1, source));
-            throw new IllegalStateException("Unexpected ColumnData type: " + c.getClass().getName());
-        });
+        return Iterators.transform(row.iterator(), this::wrapColumnData);
+    }
+
+    private ColumnData wrapColumnData(ColumnData c)
+    {
+        if (c == null)
+            return null;
+        if (c instanceof Cell<?>)
+            return new CellWithSourceTable<>(c.column(), (Cell<?>) c, source);
+        if (c instanceof ComplexColumnData)
+            return ((ComplexColumnData) c).transform(c1 -> new CellWithSourceTable<>(c1.column(), c1, source));
+        throw new IllegalStateException("Unexpected ColumnData type: " + c.getClass().getName());
+    }
+
+    private Cell<?> wrapCell(Cell<?> c)
+    {
+        return c != null ? new CellWithSourceTable<>(c.column(), c, source) : null;
+    }
+
+    private Row maybeWrapRow(Row r)
+    {
+        if (r == null)
+            return null;
+        if (r == this.row)
+            return this;
+        return new RowWithSourceTable(r, source);
     }
 }
