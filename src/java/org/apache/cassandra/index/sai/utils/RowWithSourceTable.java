@@ -149,7 +149,7 @@ public class RowWithSourceTable implements Row
         var cell = row.getCell(c);
         if (cell == null)
             return null;
-        return new CellWithSourceTable<>(c, cell, source);
+        return new CellWithSourceTable<>(cell, source);
     }
 
     @Override
@@ -356,15 +356,15 @@ public class RowWithSourceTable implements Row
         if (c == null)
             return null;
         if (c instanceof Cell<?>)
-            return new CellWithSourceTable<>(c.column(), (Cell<?>) c, source);
+            return new CellWithSourceTable<>((Cell<?>) c, source);
         if (c instanceof ComplexColumnData)
-            return ((ComplexColumnData) c).transform(c1 -> new CellWithSourceTable<>(c1.column(), c1, source));
+            return ((ComplexColumnData) c).transform(c1 -> new CellWithSourceTable<>(c1, source));
         throw new IllegalStateException("Unexpected ColumnData type: " + c.getClass().getName());
     }
 
     private Cell<?> wrapCell(Cell<?> c)
     {
-        return c != null ? new CellWithSourceTable<>(c.column(), c, source) : null;
+        return c != null ? new CellWithSourceTable<>(c, source) : null;
     }
 
     private Row maybeWrapRow(Row r)

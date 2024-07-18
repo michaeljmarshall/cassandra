@@ -39,9 +39,9 @@ public class CellWithSourceTable<T> extends Cell<T>
     private final Cell<T> cell;
     private final Object sourceTable;
 
-    public CellWithSourceTable(ColumnMetadata column, Cell<T> cell, Object sourceTable)
+    public CellWithSourceTable(Cell<T> cell, Object sourceTable)
     {
-        super(column);
+        super(cell.column());
         this.cell = cell;
         this.sourceTable = sourceTable;
     }
@@ -216,6 +216,6 @@ public class CellWithSourceTable<T> extends Cell<T>
         // we can skip creating a new wrapper.
         if (maybeNewCell == this.cell)
             return this;
-        return new CellWithSourceTable<>(column, maybeNewCell, sourceTable);
+        return new CellWithSourceTable<>(maybeNewCell, sourceTable);
     }
 }

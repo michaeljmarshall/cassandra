@@ -60,7 +60,7 @@ public class CellWithSourceTableTest {
         column = ColumnMetadata.regularColumn("keyspace1", "table1", "name1", Int32Type.instance);
         wrappedCell = new ArrayCell(column, timestamp, Cell.NO_TTL, Cell.NO_DELETION_TIME, value, null);
         sourceTable = new Object();
-        cellWithSourceTable = new CellWithSourceTable<>(column, wrappedCell, sourceTable);
+        cellWithSourceTable = new CellWithSourceTable<>(wrappedCell, sourceTable);
     }
 
     @Test
@@ -246,7 +246,7 @@ public class CellWithSourceTableTest {
         int purgeSame = 98765;
         when(mockCell.purge(any(), eq(purgeNull))).thenReturn(null);
         when(mockCell.purge(any(), eq(purgeSame))).thenReturn(mockCell);
-        var cell = new CellWithSourceTable<>(column, mockCell, sourceTable);
+        var cell = new CellWithSourceTable<>(mockCell, sourceTable);
         assertNull(cell.purge(purger, purgeNull));
         assertSame(cell, cell.purge(purger, purgeSame));
     }
