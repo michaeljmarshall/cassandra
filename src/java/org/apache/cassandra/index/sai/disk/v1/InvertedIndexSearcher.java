@@ -32,11 +32,10 @@ import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
+import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
-import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.TermsIterator;
-import org.apache.cassandra.index.sai.disk.format.IndexComponent;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentType;
 import org.apache.cassandra.index.sai.metrics.MulticastQueryEventListeners;
 import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
@@ -62,25 +61,26 @@ public class InvertedIndexSearcher extends IndexSearcher implements SegmentOrder
     private final ColumnFilter columnFilter;
     private final QueryEventListener.TrieIndexEventListener perColumnEventListener;
 
-    InvertedIndexSearcher(PrimaryKeyMap.Factory primaryKeyMapFactory,
+    InvertedIndexSearcher(SSTableContext sstableContext,
                           PerIndexFiles perIndexFiles,
                           SegmentMetadata segmentMetadata,
-                          IndexDescriptor indexDescriptor,
                           IndexContext indexContext) throws IOException
     {
-        super(primaryKeyMapFactory, perIndexFiles, segmentMetadata, indexDescriptor, indexContext);
+        super(sstableContext.primaryKeyMapFactory(), perIndexFiles, segmentMetadata, indexContext);
 
-        long root = metadata.getIndexRoot(IndexComponent.TERMS_DATA);
+        long root = metadata.getIndexRoot(IndexComponentType.TERMS_DATA);
         assert root >= 0;
 
         perColumnEventListener = (QueryEventListener.TrieIndexEventListener)indexContext.getColumnQueryMetrics();
 
-        Map<String,String> map = metadata.componentMetadatas.get(IndexComponent.TERMS_DATA).attributes;
+        Map<String,String> map = metadata.componentMetadatas.get(IndexComponentType.TERMS_DATA).attributes;
         String footerPointerString = map.get(SAICodecUtils.FOOTER_POINTER);
         long footerPointer = footerPointerString == null ? -1 : Long.parseLong(footerPointerString);
 
+        var perIndexComponents = perIndexFiles.usedPerIndexComponents();
         reader = new TermsReader(indexContext,
                                  indexFiles.termsData(),
+                                 perIndexComponents.byteComparableVersionFor(IndexComponentType.TERMS_DATA),
                                  indexFiles.postingLists(),
                                  root, footerPointer);
         columnFilter = ColumnFilter.selection(RegularAndStaticColumns.of(indexContext.getDefinition()));

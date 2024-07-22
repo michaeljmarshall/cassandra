@@ -25,7 +25,6 @@ import java.util.PriorityQueue;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
 
-import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.AbstractIterator;
@@ -38,11 +37,12 @@ import org.apache.cassandra.utils.CloseableIterator;
  */
 public class MergePrimaryWithSortKeyIterator extends AbstractIterator<PrimaryKeyWithSortKey>
 {
-    private final PriorityQueue<PeekingIterator<? extends PrimaryKeyWithSortKey>> pq;
+    private final PriorityQueue<PeekingIterator<PrimaryKeyWithSortKey>> pq;
     private final List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iteratorsToBeClosed;
     private final AutoCloseable onClose;
 
-    public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators, Orderer orderer)
+    public MergePrimaryWithSortKeyIterator(List<CloseableIterator<? extends PrimaryKeyWithSortKey>> iterators,
+                                           Orderer orderer)
     {
         this(iterators, orderer, () -> {});
     }

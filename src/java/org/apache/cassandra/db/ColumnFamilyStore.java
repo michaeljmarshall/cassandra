@@ -800,7 +800,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean, Memtable.Owner
 
             storageHandler.unload();
 
-            if (status.isInvalidAndShouldDropData())
+            // wait for sstable GlobalTidy to complete
+            if (!status.isValid())
             {
                 LifecycleTransaction.waitForDeletions(); // just in case an index had a reference on the sstable
             }
@@ -2565,6 +2566,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean, Memtable.Owner
      * For testing.  No effort is made to clear historical or even the current memtables, nor for
      * thread safety.  All we do is wipe the sstable containers clean, while leaving the actual
      * data files present on disk.  (This allows tests to easily call loadNewSSTables on them.)
+     *
+     * This will release references to current SSTableReader instances. Test that wishes to keep
+     * references to these sstables must reference then prior to calling this method via
+     * {@link SSTableReader#selfRef().ref()}.
      */
     @VisibleForTesting
     public void clearUnsafe()

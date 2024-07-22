@@ -20,19 +20,21 @@ package org.apache.cassandra.index.sai.memory;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
-import com.google.common.collect.Sets;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -51,8 +53,8 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SAITester;
+import org.apache.cassandra.index.sai.cql.VectorTester;
 import org.apache.cassandra.index.sai.disk.vector.VectorMemtableIndex;
-import org.apache.cassandra.index.sai.disk.vector.VectorSourceModel;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
@@ -107,34 +109,50 @@ public class VectorMemtableIndexTest extends SAITester
         dimensionCount = getRandom().nextIntBetween(2, 2048);
         indexContext = SAITester.createIndexContext("index", VectorType.getInstance(FloatType.instance, dimensionCount), cfs);
         indexSearchCounter.reset();
-        keyMap = new TreeMap<>();
-        rowMap = new HashMap<>();
+        keyMap = new ConcurrentSkipListMap<>();
+        rowMap = new ConcurrentHashMap<>();
 
         Injections.inject(indexSearchCounter);
     }
 
     @Test
-    public void randomQueryTest() throws Exception
+    public void randomQueryTest()
     {
         var memtable = cfs.getCurrentMemtable();
         memtableIndex = new VectorMemtableIndex(indexContext, memtable);
 
-        for (int row = 0; row < getRandom().nextIntBetween(1000, 5000); row++)
+        // insert rows
+        int rowCount = ThreadLocalRandom.current().nextInt(1000, 5000);
+        IntStream.range(0, rowCount).parallel().forEach(i ->
         {
-            int pk = getRandom().nextIntBetween(0, 10000);
-            while (rowMap.containsKey(pk))
-                pk = getRandom().nextIntBetween(0, 10000);
-            var value = randomVector();
-            rowMap.put(pk, value);
-            addRow(pk, value);
-        }
-
+            var value = randomVectorSerialized();
+            while (true)
+            {
+                var pk = ThreadLocalRandom.current().nextInt(0, 10000);
+                if (rowMap.putIfAbsent(pk, value) == null)
+                {
+                    addRow(pk, value);
+                    break;
+                }
+            }
+        });
+        memtableIndex.cleanup();
+        // master list of (random) keys inserted
         List<DecoratedKey> keys = new ArrayList<>(keyMap.keySet());
 
-        for (int executionCount = 0; executionCount < 1000; executionCount++)
+        // execute queries both with and without brute force enabled
+        validate(keys);
+        VectorTester.setMaxBruteForceRows(0);
+        validate(keys);
+    }
+
+    private void validate(List<DecoratedKey> keys)
+    {
+        IntStream.range(0, 1_000).parallel().forEach(i ->
         {
             var orderer = generateRandomOrderer();
             AbstractBounds<PartitionPosition> keyRange = generateRandomBounds(keys);
+            // compute keys in range of the bounds
             Set<Integer> keysInRange = keys.stream().filter(keyRange::contains)
                                            .map(k -> Int32Type.instance.compose(k.getKey()))
                                            .collect(Collectors.toSet());
@@ -142,12 +160,13 @@ public class VectorMemtableIndexTest extends SAITester
             Set<Integer> foundKeys = new HashSet<>();
             int limit = getRandom().nextIntBetween(1, 100);
 
-            long expectedNumResults = Math.min(limit, keysInRange.size());
+            long expectedResults = Math.min(limit, keysInRange.size());
 
+            // execute the random ANN expression, and check that we get back as many keys as we asked for
             try (var iterator = memtableIndex.orderBy(new QueryContext(), orderer, keyRange, limit))
             {
                 PrimaryKeyWithScore lastKey = null;
-                while (iterator.hasNext() && expectedNumResults > foundKeys.size())
+                while (iterator.hasNext() && foundKeys.size() < expectedResults)
                 {
                     PrimaryKeyWithScore primaryKeyWithScore = (PrimaryKeyWithScore) iterator.next();
                     if (lastKey != null)
@@ -163,19 +182,12 @@ public class VectorMemtableIndexTest extends SAITester
                     assertTrue(rowMap.containsKey(key));
                     foundKeys.add(key);
                 }
-                // with -Dcassandra.test.random.seed=260652334768666, there is one missing key
-                if (RangeUtil.coversFullRing(keyRange))
-                {
-                    assertEquals("Missing key in full ring: " + Sets.difference(keysInRange, foundKeys), expectedNumResults, foundKeys.size());
+                if (foundKeys.size() < expectedResults)
+                    assertEquals("Expected " + expectedResults + " results but got " + foundKeys.size(), foundKeys.size(), expectedResults);
+                if (limit < keysInRange.size())
                     assertTrue("Iterator should not be exhausted since it can resume search", iterator.hasNext());
-                }
-                else
-                {
-                    // if skip ANN, returned keys maybe larger than limit
-                    assertTrue("Missing key in subrange: " + Sets.difference(keysInRange, foundKeys), expectedNumResults <= foundKeys.size());
-                }
             }
-        }
+        });
     }
 
     @Test
@@ -186,15 +198,11 @@ public class VectorMemtableIndexTest extends SAITester
 
     private Orderer generateRandomOrderer()
     {
-        return new Orderer(indexContext, Operator.ANN, randomVector());
+        return new Orderer(indexContext, Operator.ANN, randomVectorSerialized());
     }
 
-    private ByteBuffer randomVector() {
-        List<Float> rawVector = new ArrayList<>(dimensionCount);
-        for (int i = 0; i < dimensionCount; i++) {
-            rawVector.add(getRandom().nextFloat());
-        }
-        return VectorType.getInstance(FloatType.instance, dimensionCount).getSerializer().serialize(rawVector);
+    private ByteBuffer randomVectorSerialized() {
+        return CQLTester.randomVectorSerialized(dimensionCount);
     }
 
     private AbstractBounds<PartitionPosition> generateRandomBounds(List<DecoratedKey> keys)

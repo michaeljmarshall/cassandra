@@ -413,10 +413,33 @@ public enum CassandraRelevantProperties
 
     // Allow disabling deletions of corrupt index components for troubleshooting
     DELETE_CORRUPT_SAI_COMPONENTS("cassandra.sai.delete_corrupt_components", "true"),
+    // Allow restoring legacy behavior of deleting sai components before a rebuild (which implies a rebuild cannot be
+    // done without first stopping reads on that index)
+    IMMUTABLE_SAI_COMPONENTS("cassandra.sai.immutable_components", "false"),
 
     // Enables parallel index read.
     USE_PARALLEL_INDEX_READ("cassandra.index_read.parallel", "true"),
     PARALLEL_INDEX_READ_NUM_THREADS("cassandra.index_read.parallel_thread_num"),
+
+    // bloom filter lazy loading
+    /**
+     * true if non-local table's bloom filter should be deserialized on read instead of when opening sstable
+     */
+    BLOOM_FILTER_LAZY_LOADING("cassandra.bloom_filter_lazy_loading", "false"),
+
+    /**
+     * sstable primary index hits per second to determine if a sstable is hot. 0 means BF should be loaded immediately on read.
+     *
+     * Note that when WINDOW <= 0, this is used as absolute primary index access count.
+     */
+    BLOOM_FILTER_LAZY_LOADING_THRESHOLD("cassandra.bloom_filter_lazy_loading.threshold", "0"),
+
+    /**
+     * Window of time by minute, available: 1 (default), 5, 15, 120.
+     *
+     * Note that if <= 0 then we use threshold as the absolute count
+     */
+    BLOOM_FILTER_LAZY_LOADING_WINDOW("cassandra.bloom_filter_lazy_loading.window", "1"),
 
     // Allows skipping advising the OS to free cached pages associated commitlog flushing
     COMMITLOG_SKIP_FILE_ADVICE("cassandra.commitlog.skip_file_advice"),
@@ -438,7 +461,26 @@ public enum CassandraRelevantProperties
     /**
      * Whether to enable the use of {@link EndpointGroupingRangeCommandIterator}
      */
-    RANGE_READ_ENDPOINT_GROUPING_ENABLED("cassandra.range_read_endpoint_grouping_enabled", "true");
+    RANGE_READ_ENDPOINT_GROUPING_ENABLED("cassandra.range_read_endpoint_grouping_enabled", "true"),
+    /**
+     * Allows to set custom current trie index format. This node will produce sstables in this format.
+     */
+    TRIE_INDEX_FORMAT_VERSION("cassandra.trie_index_format_version", "cc"),
+
+    /**
+     * Number of replicas required to store batchlog for atomicity, only accepts values of 1 or 2.
+     */
+    REQUIRED_BATCHLOG_REPLICA_COUNT("cassandra.batchlog.required_replica_count", "2"),
+
+    /**
+     * This property should be enabled when upgrading from the version of Cassandra that allowed to create maps with
+     * duration type as a key if the schema contains such columns. It was a bug that the validation didn't prevent
+     * from creating such maps but once they are created, we need to be able to read them - hence this property.
+     * When the check is enabled, Cassandra falls back to the old behavior and let the user load the data with such
+     * maps. When the check is disabled, Cassandra will refuse to load the data with such maps and won't start if
+     * the schema contains them.
+     */
+    DURATION_IN_MAPS_COMPATIBILITY_MODE("cassandra.types.map.duration_in_map_compatibility_mode", "false");
 
     CassandraRelevantProperties(String key, String defaultVal)
     {

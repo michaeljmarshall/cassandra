@@ -37,6 +37,7 @@ public class GenericOrderByTest extends SAITester
         createTable("CREATE TABLE %s (pk int PRIMARY KEY, val int, str_val ascii)");
         createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
         createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
+        waitForIndexQueryable();
         disableCompaction();
 
         var expectedResults = new TreeMap<String, Integer>();
@@ -82,6 +83,7 @@ public class GenericOrderByTest extends SAITester
         createTable("CREATE TABLE %s (pk int PRIMARY KEY, val int, str_val ascii)");
         createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
         createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
+        waitForIndexQueryable();
         disableCompaction();
 
         // 'A' will be first

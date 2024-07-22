@@ -26,6 +26,7 @@ import org.apache.cassandra.db.marshal.ValueAccessor;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.ColumnData;
+import org.apache.cassandra.db.rows.ComplexColumnData;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.memory.ByteBufferCloner;
 
@@ -38,9 +39,9 @@ public class CellWithSourceTable<T> extends Cell<T>
     private final Cell<T> cell;
     private final Object sourceTable;
 
-    public CellWithSourceTable(ColumnMetadata column, Cell<T> cell, Object sourceTable)
+    public CellWithSourceTable(Cell<T> cell, Object sourceTable)
     {
-        super(column);
+        super(cell.column());
         this.cell = cell;
         this.sourceTable = sourceTable;
     }
@@ -113,31 +114,31 @@ public class CellWithSourceTable<T> extends Cell<T>
     @Override
     public Cell<?> withUpdatedColumn(ColumnMetadata newColumn)
     {
-        return cell.withUpdatedColumn(newColumn);
+        return wrapIfNew(cell.withUpdatedColumn(newColumn));
     }
 
     @Override
     public Cell<?> withUpdatedValue(ByteBuffer newValue)
     {
-        return cell.withUpdatedValue(newValue);
+        return wrapIfNew(cell.withUpdatedValue(newValue));
     }
 
     @Override
     public Cell<?> withUpdatedTimestampAndLocalDeletionTime(long newTimestamp, int newLocalDeletionTime)
     {
-        return cell.withUpdatedTimestampAndLocalDeletionTime(newTimestamp, newLocalDeletionTime);
+        return wrapIfNew(cell.withUpdatedTimestampAndLocalDeletionTime(newTimestamp, newLocalDeletionTime));
     }
 
     @Override
     public Cell<?> withSkippedValue()
     {
-        return cell.withSkippedValue();
+        return wrapIfNew(cell.withSkippedValue());
     }
 
     @Override
     public Cell<?> clone(ByteBufferCloner cloner)
     {
-        return cell.clone(cloner);
+        return wrapIfNew(cell.clone(cloner));
     }
 
     @Override
@@ -173,19 +174,26 @@ public class CellWithSourceTable<T> extends Cell<T>
     @Override
     public ColumnData updateAllTimestamp(long newTimestamp)
     {
-        return cell.updateAllTimestamp(newTimestamp);
+        var maybeNewCell = cell.updateAllTimestamp(newTimestamp);
+        if (maybeNewCell instanceof Cell)
+            return wrapIfNew((Cell<?>) maybeNewCell);
+        if (maybeNewCell instanceof ComplexColumnData)
+            return ((ComplexColumnData) maybeNewCell).transform(this::wrapIfNew);
+        // It's not clear when we would hit this code path, but it seems we should not
+        // hit this from SAI.
+        throw new IllegalStateException("Expected a Cell instance, but got " + maybeNewCell);
     }
 
     @Override
     public Cell<?> markCounterLocalToBeCleared()
     {
-        return cell.markCounterLocalToBeCleared();
+        return wrapIfNew(cell.markCounterLocalToBeCleared());
     }
 
     @Override
     public Cell<?> purge(DeletionPurger purger, int nowInSec)
     {
-        return cell.purge(purger, nowInSec);
+        return wrapIfNew(cell.purge(purger, nowInSec));
     }
 
     @Override
@@ -198,5 +206,16 @@ public class CellWithSourceTable<T> extends Cell<T>
     public long minTimestamp()
     {
         return cell.minTimestamp();
+    }
+
+    private Cell<?> wrapIfNew(Cell<?> maybeNewCell)
+    {
+        if (maybeNewCell == null)
+            return null;
+        // If the cell's method returned a reference to the same cell, then
+        // we can skip creating a new wrapper.
+        if (maybeNewCell == this.cell)
+            return this;
+        return new CellWithSourceTable<>(maybeNewCell, sourceTable);
     }
 }

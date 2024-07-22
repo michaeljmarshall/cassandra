@@ -59,10 +59,20 @@ public class Orderer
         this.vector = context.getValidator().isVector() ? TypeUtil.decomposeVector(context.getValidator(), term) : null;
     }
 
+    public String getIndexName()
+    {
+        return context.getIndexName();
+    }
+
     public boolean isAscending()
     {
         // Note: ANN is always descending.
         return operator == Operator.ORDER_BY_ASC;
+    }
+
+    public boolean isLiteral()
+    {
+        return context.isLiteral();
     }
 
     public boolean isANN()
@@ -86,4 +96,5 @@ public class Orderer
     {
         return ORDER_BY_OPERATORS.contains(expression.operator());
     }
+
 }

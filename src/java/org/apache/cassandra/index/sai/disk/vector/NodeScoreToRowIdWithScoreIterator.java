@@ -24,6 +24,7 @@ import java.util.stream.IntStream;
 
 import io.github.jbellis.jvector.graph.SearchResult;
 import org.apache.cassandra.index.sai.utils.RowIdWithScore;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
@@ -74,7 +75,6 @@ public class NodeScoreToRowIdWithScoreIterator extends AbstractIterator<RowIdWit
     @Override
     public void close()
     {
-        rowIdsView.close();
-        nodeScores.close();
+        FileUtils.closeQuietly(rowIdsView, nodeScores);
     }
 }

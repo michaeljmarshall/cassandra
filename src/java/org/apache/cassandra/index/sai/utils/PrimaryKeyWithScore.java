@@ -21,7 +21,6 @@ package org.apache.cassandra.index.sai.utils;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.index.sai.IndexContext;
-import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 
 /**
  * A {@link PrimaryKey} that includes a score from a source index.
