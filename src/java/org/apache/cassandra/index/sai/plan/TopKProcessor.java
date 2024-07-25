@@ -164,13 +164,7 @@ public class TopKProcessor
         PriorityQueue<Triple<PartitionInfo, Row, Float>> topK = new PriorityQueue<>(limit, Comparator.comparing((Triple<PartitionInfo, Row, Float> t) -> t.getRight()).reversed());
         // to store top-k results in primary key order
         TreeMap<PartitionInfo, TreeSet<Unfiltered>> unfilteredByPartition = new TreeMap<>(Comparator.comparing(p -> p.key));
-        // TODO optimize me.
-        Comparator<ByteBuffer> bufferComparator = (a, b) -> {
-            var aEncoded = TypeUtil.encode(a, indexContext.getValidator());
-            var bEncoded = TypeUtil.encode(b, indexContext.getValidator());
-            return TypeUtil.compare(aEncoded, bEncoded, indexContext.getValidator());
-        };
-        Comparator<Triple<PartitionInfo, Row, ByteBuffer>> comparator = Comparator.comparing(Triple::getRight, bufferComparator);
+        Comparator<Triple<PartitionInfo, Row, ByteBuffer>> comparator = Comparator.comparing(Triple::getRight, indexContext.getValidator());
         if (expression.operator() == Operator.ORDER_BY_DESC)
             comparator = comparator.reversed();
         var sorter = new PriorityQueue<>(limit, comparator);

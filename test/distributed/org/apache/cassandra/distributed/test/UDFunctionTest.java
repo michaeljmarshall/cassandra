@@ -1,10 +1,4 @@
 /*
- * All changes to the original code are Copyright DataStax, Inc.
- *
- * Please see the included license file for details.
- */
-
-/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,34 +16,22 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.index.sai.view;
+package org.apache.cassandra.distributed.test;
 
-import java.util.Set;
+import org.junit.Test;
 
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.index.sai.SSTableIndex;
-import org.apache.cassandra.index.sai.plan.Expression;
+import org.apache.cassandra.distributed.Cluster;
 
-public interface TermTree
+public class UDFunctionTest extends TestBaseImpl
 {
-    Set<SSTableIndex> search(Expression e);
-
-    abstract class Builder
+    @Test
+    public void nodeWillNotStartWithScriptedUDFsTest() throws Throwable
     {
-        protected final AbstractType<?> comparator;
-
-        protected Builder(AbstractType<?> comparator)
+        try (Cluster cluster = builder().withNodes(1)
+                                        .withConfig(c -> c.set("enable_scripted_user_defined_functions", true))
+                                        .createWithoutStarting())
         {
-            this.comparator = comparator;
+            assertCannotStartDueToConfigurationException(cluster);
         }
-
-        public final void add(SSTableIndex index)
-        {
-            addIndex(index);
-        }
-
-        protected abstract void addIndex(SSTableIndex index);
-
-        public abstract TermTree build();
     }
 }

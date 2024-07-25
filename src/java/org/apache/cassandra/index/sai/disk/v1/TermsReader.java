@@ -28,11 +28,12 @@ import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.TermsIterator;
-import org.apache.cassandra.index.sai.disk.format.IndexComponents;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.io.IndexInput;
 import org.apache.cassandra.index.sai.disk.v1.postings.MergePostingList;
 import org.apache.cassandra.index.sai.disk.v1.postings.PostingsReader;
@@ -43,6 +44,7 @@ import org.apache.cassandra.index.sai.metrics.QueryEventListener;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.AbortedOperationException;
 import org.apache.cassandra.index.sai.utils.IndexFileUtils;
+import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.Pair;
@@ -72,6 +74,7 @@ public class TermsReader implements Closeable
     private final FileHandle termDictionaryFile;
     private final FileHandle postingsFile;
     private final long termDictionaryRoot;
+    private final Version version;
     private final ByteComparable.Version termDictionaryFileEncodingVersion;
 
     public TermsReader(IndexContext indexContext,
@@ -79,9 +82,11 @@ public class TermsReader implements Closeable
                        ByteComparable.Version termsDataEncodingVersion,
                        FileHandle postingLists,
                        long root,
-                       long termsFooterPointer) throws IOException
+                       long termsFooterPointer,
+                       Version version) throws IOException
     {
         this.indexContext = indexContext;
+        this.version = version;
         termDictionaryFile = termsData;
         postingsFile = postingLists;
         termDictionaryRoot = root;
@@ -121,15 +126,16 @@ public class TermsReader implements Closeable
         }
     }
 
-    public TermsIterator allTerms(long segmentOffset)
+    public TermsIterator allTerms()
     {
-        return allTerms(segmentOffset, true);
+        return allTerms(true);
     }
 
-    public TermsIterator allTerms(long segmentOffset, boolean ascending)
+    public TermsIterator allTerms(boolean ascending)
     {
         // blocking, since we use it only for segment merging for now
-        return ascending ? new TermsScanner(segmentOffset) : new ReverseTermsScanner(segmentOffset);
+        return ascending ? new TermsScanner(version, this.indexContext.getValidator())
+                         : new ReverseTermsScanner();
     }
 
     public PostingList exactMatch(ByteComparable term, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
@@ -138,10 +144,14 @@ public class TermsReader implements Closeable
         return new TermQuery(term, perQueryEventListener, context).execute();
     }
 
-    public PostingList rangeMatch(Expression exp, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
+    /**
+     * Range query that uses the lower and upper bounds to retrieve the search results within the range. When
+     * the expression is not null, it post-filters results using the expression.
+     */
+    public PostingList rangeMatch(Expression exp, ByteComparable lower, ByteComparable upper, QueryEventListener.TrieIndexEventListener perQueryEventListener, QueryContext context)
     {
         perQueryEventListener.onSegmentHit();
-        return new RangeQuery(exp, perQueryEventListener, context).execute();
+        return new RangeQuery(exp, lower, upper, perQueryEventListener, context).execute();
     }
 
     @VisibleForTesting
@@ -229,33 +239,40 @@ public class TermsReader implements Closeable
         private final QueryContext context;
 
         private final Expression exp;
+        private final ByteComparable lower;
+        private final ByteComparable upper;
 
-        RangeQuery(Expression exp, QueryEventListener.TrieIndexEventListener listener, QueryContext context)
+        // When the exp is not null, we need to post filter the results
+        RangeQuery(Expression exp, ByteComparable lower, ByteComparable upper, QueryEventListener.TrieIndexEventListener listener, QueryContext context)
         {
             this.listener = listener;
             this.exp = exp;
             lookupStartTime = System.nanoTime();
             this.context = context;
+            this.lower = lower;
+            this.upper = upper;
         }
 
         public PostingList execute()
         {
-            // This works by creating an iterator over all the map entries for a given key and then filtering
-            // the results in the materializeResults method.
-            final ByteComparable lower = exp.lower != null ? ByteComparable.fixedLength(exp.getLowerBound()) : null;
-            final ByteComparable upper = exp.upper != null ? ByteComparable.fixedLength(exp.getUpperBound()) : null;
+            // Note: we always pass true for include start because we use the ByteComparable terminator above
+            // to selectively determine when we have a match on the first/last term. This is probably part of the API
+            // that could change, but it's been there for a bit, so we'll leave it for now.
             try (TrieTermsDictionaryReader reader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(),
                                                                                   termDictionaryRoot,
                                                                                   lower,
                                                                                   upper,
                                                                                   true,
+                                                                                  exp != null,
                                                                                   termDictionaryFileEncodingVersion))
             {
                 if (!reader.hasNext())
                     return PostingList.EMPTY;
 
                 context.checkpoint();
-                PostingList postings = readAndMergePostings(reader);
+                PostingList postings = exp == null
+                                       ? readAndMergePostings(reader)
+                                       : readFilterAndMergePosting(reader);
 
                 listener.onTraversalComplete(System.nanoTime() - lookupStartTime, TimeUnit.NANOSECONDS);
 
@@ -287,20 +304,46 @@ public class TermsReader implements Closeable
 
             do
             {
+                long postingsOffset = reader.nextAsLong();
+                var currentReader = currentReader(postingsInput, postingsSummaryInput, postingsOffset);
+
+                if (!currentReader.isEmpty())
+                    postingLists.add(new PostingList.PeekablePostingList(currentReader));
+                else
+                    FileUtils.close(currentReader);
+            } while (reader.hasNext());
+
+            return MergePostingList.merge(postingLists)
+                                   .onClose(() -> FileUtils.close(postingsInput, postingsSummaryInput));
+        }
+
+        /**
+         * Reads the posting lists for the matching terms, apply the expression to filter results, and merge them into
+         * a single posting list. It assumes that the posting list for each term is sorted.
+         *
+         * @return the posting lists for the terms matching the query.
+         */
+        private PostingList readFilterAndMergePosting(TrieTermsDictionaryReader reader) throws IOException
+        {
+            assert reader.hasNext();
+            ArrayList<PostingList.PeekablePostingList> postingLists = new ArrayList<>();
+
+            // index inputs will be closed with the onClose method of the returned merged posting list
+            IndexInput postingsInput = IndexFileUtils.instance.openInput(postingsFile);
+            IndexInput postingsSummaryInput = IndexFileUtils.instance.openInput(postingsFile);
+
+            do
+            {
                 Pair<ByteComparable, Long> nextTriePair = reader.next();
-                ByteSource mapEntry = nextTriePair.left.asComparableBytes(ByteComparable.Version.OSS41);
+                ByteSource mapEntry = nextTriePair.left.asComparableBytes(termDictionaryFileEncodingVersion);
                 long postingsOffset = nextTriePair.right;
                 byte[] nextBytes = ByteSourceInverse.readBytes(mapEntry);
 
                 if (exp.isSatisfiedBy(ByteBuffer.wrap(nextBytes)))
                 {
-                    var blocksSummary = new PostingsReader.BlocksSummary(postingsSummaryInput, postingsOffset, PostingsReader.InputCloser.NOOP);
-                    var currentReader = new PostingsReader(postingsInput,
-                                                           blocksSummary,
-                                                           listener.postingListEventListener(),
-                                                           PostingsReader.InputCloser.NOOP);
+                    var currentReader = currentReader(postingsInput, postingsSummaryInput, postingsOffset);
 
-                    if (currentReader.size() > 0)
+                    if (!currentReader.isEmpty())
                         postingLists.add(new PostingList.PeekablePostingList(currentReader));
                     else
                         FileUtils.close(currentReader);
@@ -310,25 +353,45 @@ public class TermsReader implements Closeable
             return MergePostingList.merge(postingLists)
                                    .onClose(() -> FileUtils.close(postingsInput, postingsSummaryInput));
         }
+
+        private PostingsReader currentReader(IndexInput postingsInput,
+                                             IndexInput postingsSummaryInput,
+                                             long postingsOffset) throws IOException
+        {
+            var blocksSummary = new PostingsReader.BlocksSummary(postingsSummaryInput,
+                                                                 postingsOffset,
+                                                                 PostingsReader.InputCloser.NOOP);
+            return new PostingsReader(postingsInput,
+                                      blocksSummary,
+                                      listener.postingListEventListener(),
+                                      PostingsReader.InputCloser.NOOP);
+        }
     }
 
     private class TermsScanner implements TermsIterator
     {
-        private final long segmentOffset;
         private final TrieTermsDictionaryReader termsDictionaryReader;
         private final ByteBuffer minTerm, maxTerm;
         private Pair<ByteComparable, Long> entry;
         private final IndexInput postingsInput;
         private final IndexInput postingsSummaryInput;
 
-        private TermsScanner(long segmentOffset)
+        private TermsScanner(Version version, AbstractType<?> type)
         {
             this.termsDictionaryReader = new TrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot, termDictionaryFileEncodingVersion);
-            this.minTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMinTerm().asComparableBytes(ByteComparable.Version.OSS41)));
-            this.maxTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMaxTerm().asComparableBytes(ByteComparable.Version.OSS41)));
-            this.segmentOffset = segmentOffset;
             this.postingsInput = IndexFileUtils.instance.openInput(postingsFile);
             this.postingsSummaryInput = IndexFileUtils.instance.openInput(postingsFile);
+            // We decode based on the logic used to encode the min and max terms in the trie.
+            if (version.onOrAfter(Version.DB) && TypeUtil.isComposite(type))
+            {
+                this.minTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMinTerm().asPeekableBytes(termDictionaryFileEncodingVersion), termDictionaryFileEncodingVersion);
+                this.maxTerm = indexContext.getValidator().fromComparableBytes(termsDictionaryReader.getMaxTerm().asPeekableBytes(termDictionaryFileEncodingVersion), termDictionaryFileEncodingVersion);
+            }
+            else
+            {
+                this.minTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMinTerm().asComparableBytes(termDictionaryFileEncodingVersion)));
+                this.maxTerm = ByteBuffer.wrap(ByteSourceInverse.readBytes(termsDictionaryReader.getMaxTerm().asComparableBytes(termDictionaryFileEncodingVersion)));
+            }
         }
 
         @Override
@@ -336,8 +399,7 @@ public class TermsReader implements Closeable
         public PostingList postings() throws IOException
         {
             assert entry != null;
-            var postingList = new ScanningPostingsReader(postingsInput, new PostingsReader.BlocksSummary(postingsSummaryInput, entry.right));
-            return new OffsetPostingList(segmentOffset, postingList);
+            return new ScanningPostingsReader(postingsInput, new PostingsReader.BlocksSummary(postingsSummaryInput, entry.right));
         }
 
         @Override
@@ -380,16 +442,14 @@ public class TermsReader implements Closeable
 
     private class ReverseTermsScanner implements TermsIterator
     {
-        private final long segmentOffset;
         private final ReverseTrieTermsDictionaryReader iterator;
         private Pair<ByteComparable, Long> entry;
         private final IndexInput postingsInput;
         private final IndexInput postingsSummaryInput;
 
-        private ReverseTermsScanner(long segmentOffset)
+        private ReverseTermsScanner()
         {
             this.iterator = new ReverseTrieTermsDictionaryReader(termDictionaryFile.instantiateRebufferer(), termDictionaryRoot);
-            this.segmentOffset = segmentOffset;
             this.postingsInput = IndexFileUtils.instance.openInput(postingsFile);
             this.postingsSummaryInput = IndexFileUtils.instance.openInput(postingsFile);
         }
@@ -399,8 +459,7 @@ public class TermsReader implements Closeable
         public PostingList postings() throws IOException
         {
             assert entry != null;
-            var postingList = new ScanningPostingsReader(postingsInput, new PostingsReader.BlocksSummary(postingsSummaryInput, entry.right));
-            return new OffsetPostingList(segmentOffset, postingList);
+            return new ScanningPostingsReader(postingsInput, new PostingsReader.BlocksSummary(postingsSummaryInput, entry.right));
         }
 
         @Override
@@ -438,42 +497,6 @@ public class TermsReader implements Closeable
         public boolean hasNext()
         {
             return iterator.hasNext();
-        }
-    }
-
-    private class OffsetPostingList implements PostingList
-    {
-        private final long offset;
-        private final PostingList wrapped;
-
-        OffsetPostingList(long offset, PostingList postingList)
-        {
-            this.offset = offset;
-            this.wrapped = postingList;
-        }
-
-        @Override
-        public long nextPosting() throws IOException
-        {
-            long next = wrapped.nextPosting();
-            if (next == PostingList.END_OF_STREAM)
-                return next;
-            return next + offset;
-        }
-
-        @Override
-        public long size()
-        {
-            return wrapped.size();
-        }
-
-        @Override
-        public long advance(long targetRowID) throws IOException
-        {
-            long next = wrapped.advance(targetRowID);
-            if (next == PostingList.END_OF_STREAM)
-                return next;
-            return next + offset;
         }
     }
 }

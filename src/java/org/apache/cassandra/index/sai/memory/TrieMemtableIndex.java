@@ -42,6 +42,7 @@ import org.apache.cassandra.db.memtable.TrieMemtable;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.plan.Orderer;
 import org.apache.cassandra.index.sai.utils.MergePrimaryWithSortKeyIterator;
@@ -134,7 +135,7 @@ public class TrieMemtableIndex implements MemtableIndex
         return Arrays.stream(rangeIndexes)
                      .map(MemoryIndex::getMinTerm)
                      .filter(Objects::nonNull)
-                     .reduce((a, b) -> TypeUtil.min(a, b, validator))
+                     .reduce((a, b) -> TypeUtil.min(a, b, validator, Version.latest()))
                      .orElse(null);
     }
 
@@ -151,7 +152,7 @@ public class TrieMemtableIndex implements MemtableIndex
         return Arrays.stream(rangeIndexes)
                      .map(MemoryIndex::getMaxTerm)
                      .filter(Objects::nonNull)
-                     .reduce((a, b) -> TypeUtil.max(a, b, validator))
+                     .reduce((a, b) -> TypeUtil.max(a, b, validator, Version.latest()))
                      .orElse(null);
     }
 

@@ -36,6 +36,7 @@ import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.db.marshal.InetAddressType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UUIDType;
+import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.serializers.SimpleDateSerializer;
 import org.apache.cassandra.serializers.TimeSerializer;
@@ -725,10 +726,15 @@ public abstract class DataSet<T> extends CQLTester
                 }
                 values[index] = value;
             }
+            // TODO this ordering is not the same as the InetAddressType's ordering. Is that a bug?
+            //  var x = Arrays.copyOf(values, values.length);
+            //  // Sort using the InetAddressType comparator
+            //  Arrays.sort(x, Comparator.comparing(InetAddressType.instance.getSerializer()::serialize, InetAddressType.instance));
             Arrays.sort(values, (o1, o2) -> {
                 return TypeUtil.compare(TypeUtil.encode(ByteBuffer.wrap(o1.getAddress()), InetAddressType.instance),
                                         TypeUtil.encode(ByteBuffer.wrap(o2.getAddress()), InetAddressType.instance),
-                                        InetAddressType.instance);
+                                        InetAddressType.instance,
+                                        Version.DB);
             });
         }
 
