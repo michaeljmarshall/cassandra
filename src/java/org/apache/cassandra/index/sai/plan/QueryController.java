@@ -904,12 +904,10 @@ public class QueryController implements Plan.Executor, Plan.CostEstimator
     {
         Preconditions.checkArgument(limit > 0, "limit must be > 0");
 
-        IndexContext context = ordering.context;
-        Collection<MemtableIndex> memtables = context.getLiveMemtables().values();
-        View queryView = context.getView();
+        var queryView = queryContext.view;
 
         int annNodesCount = 0;
-        for (MemtableIndex index : memtables)
+        for (MemtableIndex index : queryView.memtableIndexes)
         {
             // TODO: maybe limit and candidates should be scaled proportionally by the size of the memtable?
             int memtableCandidates = (int) Math.min(Integer.MAX_VALUE, candidates);
@@ -917,10 +915,10 @@ public class QueryController implements Plan.Executor, Plan.CostEstimator
         }
 
         long totalRows = 0;
-        for (SSTableIndex index : queryView.getIndexes())
+        for (SSTableIndex index : queryView.referencedIndexes)
             totalRows += index.getSSTable().getTotalRows();
 
-        for (SSTableIndex index : queryView.getIndexes())
+        for (SSTableIndex index : queryView.referencedIndexes)
         {
             for (Segment segment : index.getSegments())
             {
