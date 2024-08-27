@@ -443,6 +443,6 @@ public final class ByteSourceInverse
 
     private static void assertValidByte(int data)
     {
-        assert data >= BYTE_NO_BITS && data <= BYTE_ALL_BITS;
+        assert data >= BYTE_NO_BITS && data <= BYTE_ALL_BITS : "Invalid byte: " + data;
     }
 }

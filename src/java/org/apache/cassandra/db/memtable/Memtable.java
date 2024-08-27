@@ -272,6 +272,16 @@ public interface Memtable extends Comparable<Memtable>
         return usage;
     }
 
+    /**
+     * Estimates the total number of rows stored in the memtable.
+     * It is optimized for speed, not for accuracy.
+     */
+    static long estimateRowCount(Memtable memtable)
+    {
+        long rowSize = memtable.getEstimatedAverageRowSize();
+        return rowSize > 0 ? memtable.getLiveDataSize() / rowSize : 0;
+    }
+
     class MemoryUsage
     {
         /** On-heap memory used in bytes */

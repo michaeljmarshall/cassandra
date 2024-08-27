@@ -57,4 +57,12 @@ public class V4OnDiskFormat extends V3OnDiskFormat
                ? ByteComparable.fixedLength(input)
                : TypeUtil.asComparableBytes(input, type);
     }
+
+    @Override
+    public ByteBuffer decodeFromTrie(ByteComparable value, AbstractType<?> type)
+    {
+        return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
+               ? ByteBuffer.wrap(ByteSourceInverse.readBytes(value.asComparableBytes(ByteComparable.Version.OSS41)))
+               : type.fromComparableBytes(value.asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
+    }
 }
