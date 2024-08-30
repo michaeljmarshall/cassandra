@@ -28,9 +28,13 @@ import org.apache.cassandra.db.SortedLocalRanges;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.AbstractReplicationStrategy;
 
 public interface ShardManager
 {
+    // Config to enable using node aware shard manager
+    static final boolean ENABLE_NODE_AWARE_SHARD_MANAGER = Boolean.parseBoolean(System.getProperty("cassandra.enable_node_aware_shard_manager", "false"));
+
     /**
      * Single-partition, and generally sstables with very few partitions, can cover very small sections of the token
      * space, resulting in very high densities.
@@ -40,8 +44,11 @@ public interface ShardManager
      */
     static final double MINIMUM_TOKEN_COVERAGE = Math.scalb(1.0, -48);
 
-    static ShardManager create(DiskBoundaries diskBoundaries)
+    static ShardManager create(DiskBoundaries diskBoundaries, AbstractReplicationStrategy rs)
     {
+        // TODO do we need to deal with DiskBoundaries in astra?
+        if (ENABLE_NODE_AWARE_SHARD_MANAGER)
+            return new ShardManagerNodeAware(rs);
         List<Token> diskPositions = diskBoundaries.getPositions();
         SortedLocalRanges localRanges = diskBoundaries.getLocalRanges();
         IPartitioner partitioner = localRanges.getRealm().getPartitioner();
