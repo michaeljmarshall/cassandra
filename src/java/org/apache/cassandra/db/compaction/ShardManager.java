@@ -32,9 +32,6 @@ import org.apache.cassandra.locator.AbstractReplicationStrategy;
 
 public interface ShardManager
 {
-    // Config to enable using node aware shard manager
-    static final boolean ENABLE_NODE_AWARE_SHARD_MANAGER = Boolean.parseBoolean(System.getProperty("cassandra.enable_node_aware_shard_manager", "false"));
-
     /**
      * Single-partition, and generally sstables with very few partitions, can cover very small sections of the token
      * space, resulting in very high densities.
@@ -46,8 +43,9 @@ public interface ShardManager
 
     static ShardManager create(DiskBoundaries diskBoundaries, AbstractReplicationStrategy rs)
     {
-        // TODO do we need to deal with DiskBoundaries in astra?
-        if (ENABLE_NODE_AWARE_SHARD_MANAGER)
+        // TODO is there a convention for config option names/types? Starting with a boolean for now.
+        // TODO throw an exception if we have meaningful disk boundaries and node_aware is true.
+        if (Boolean.parseBoolean(rs.configOptions.get("node_aware")))
             return new ShardManagerNodeAware(rs);
         List<Token> diskPositions = diskBoundaries.getPositions();
         SortedLocalRanges localRanges = diskBoundaries.getLocalRanges();

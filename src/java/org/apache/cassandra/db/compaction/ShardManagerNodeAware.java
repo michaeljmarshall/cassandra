@@ -69,7 +69,7 @@ public class ShardManagerNodeAware implements ShardManager
     @Override
     public double localSpaceCoverage()
     {
-        // At the moment, this is global, so it covers the whole range. Might not be right though.
+        // This manager is global, so it owns the whole range.
         return 1;
     }
 
@@ -84,17 +84,18 @@ public class ShardManagerNodeAware implements ShardManager
     public ShardTracker boundaries(int shardCount)
     {
         var splitPointCount = shardCount - 1;
-        // TODO is it safe to get tokens here and then endpoints later without synchronization?
-        var sortedTokens = tokenMetadata.sortedTokens();
+        // Clone token map to avoid race conditions in the event we need to getAllEndpoints
+        var tokenMetadataClone = tokenMetadata.cloneOnlyTokenMap();
+        var sortedTokens = tokenMetadataClone.sortedTokens();
         if (splitPointCount > sortedTokens.size())
         {
             // Need to allocate tokens within node boundaries.
-            var endpoints = tokenMetadata.getAllEndpoints();
+            var endpoints = tokenMetadataClone.getAllEndpoints();
             double addititionalSplits = splitPointCount - sortedTokens.size();
             var splitPointsPerNode = (int) Math.ceil(addititionalSplits / endpoints.size());
             // Compute additional tokens since we don't have enough
             for (var endpoint : endpoints)
-                sortedTokens.addAll(TokenAllocation.allocateTokens(tokenMetadata, rs, endpoint, splitPointsPerNode));
+                sortedTokens.addAll(TokenAllocation.allocateTokens(tokenMetadataClone, rs, endpoint, splitPointsPerNode));
             // Sort again since we added new tokens.
             sortedTokens.sort(Token::compareTo);
         }
@@ -197,8 +198,7 @@ public class ShardManagerNodeAware implements ShardManager
         public double shardSpanSize()
         {
             var start = sortedTokens[index];
-            // TODO should this be weighted? I think not because we use the token allocator to get the splits and that
-            //  currently removes our ability to know the weight, but want to check.
+            // No weight applied because weighting is a local range property.
             return start.size(end());
         }
 
@@ -243,7 +243,6 @@ public class ShardManagerNodeAware implements ShardManager
                 return 0;
             if (covered == targetSpan)
                 return 1;
-            // TODO confirm this is okay without a weigth and without reference to the sortedLocalRange list
             double inShardSize = covered.left.size(covered.right);
             double totalSize = targetSpan.left.size(targetSpan.right);
             return inShardSize / totalSize;
@@ -252,9 +251,8 @@ public class ShardManagerNodeAware implements ShardManager
         @Override
         public double rangeSpanned(PartitionPosition first, PartitionPosition last)
         {
-            // TODO how do we take local range ownership into account here? The ShardManagerNodeAware is doing that for
-            // us, but it seems that this node aware version is possibly off base.
-            return ShardManagerNodeAware.this.rangeSpanned(first, last);
+            // Ignore local range owndership for initial implementation.
+            return first.getToken().size(last.getToken());
         }
 
         @Override
