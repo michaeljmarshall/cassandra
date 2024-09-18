@@ -345,6 +345,7 @@ public class CompactionTask extends AbstractCompactionTask
             }
             catch (Throwable t)
             {
+                // confused about throw here, but it's "right"
                 Throwables.maybeFail(onError(t));
             }
         }
@@ -362,7 +363,7 @@ public class CompactionTask extends AbstractCompactionTask
                               transaction.originals(),
                               realm.getKeyspaceName(),
                               realm.getTableName()));
-                error.addSuppressed(e);
+                error.addSuppressed(e); // add suppressed...
                 return error;
             }
 
@@ -395,6 +396,7 @@ public class CompactionTask extends AbstractCompactionTask
 
         public void close(Throwable errorsSoFar)
         {
+            // todo close messed up??
             Throwable err = Throwables.close(errorsSoFar, obsCloseable, writer, sstableRefs);
 
             if (transaction.isOffline())
@@ -575,6 +577,7 @@ public class CompactionTask extends AbstractCompactionTask
             return compactionIterator.getOperation();
         }
 
+        // we fail then close, what happens?
         void execute0()
         {
             double compressionRatio = compactionIterator.getCompressionRatio();

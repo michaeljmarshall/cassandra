@@ -390,8 +390,6 @@
         Setup the output directories.
     -->
     <target name="init" depends="validate-build-conf">
-        <fail unless="is.source.artifact"
-            message="Not a source artifact, stopping here." />
         <mkdir dir="${build.classes.main}"/>
         <mkdir dir="${test.lib}"/>
         <mkdir dir="${test.classes}"/>

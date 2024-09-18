@@ -147,7 +147,7 @@ public abstract class CompactionAwareWriter extends Transactional.AbstractTransa
      */
     boolean appendWithoutSwitchingWriters(UnfilteredRowIterator partition)
     {
-        return sstableWriter.append(partition);
+        return sstableWriter.append(partition); // we hit you
     }
 
     @Override

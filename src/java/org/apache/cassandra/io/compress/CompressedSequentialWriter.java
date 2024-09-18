@@ -205,6 +205,7 @@ public class CompressedSequentialWriter extends SequentialWriter
 
             // write corresponding checksum
             toWrite.rewind();
+            // we hit this part of the code
             crcMetadata.appendDirect(toWrite, true);
             lastFlushOffset += uncompressedLength;
         }

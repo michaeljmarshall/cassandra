@@ -20,6 +20,8 @@ package org.apache.cassandra.io.util;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.primitives.Ints;
@@ -29,10 +31,12 @@ import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.compress.CorruptBlockException;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.storage.StorageProvider;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ChecksumType;
 
 public abstract class CompressedChunkReader extends AbstractReaderFileProxy implements ChunkReader
 {
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(CompressedChunkReader.class);
     final CompressionMetadata metadata;
     final int maxCompressedLength;
     protected final long startOffset;

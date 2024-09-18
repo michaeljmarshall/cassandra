@@ -18,6 +18,7 @@
 package org.apache.cassandra.tools;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -156,7 +157,7 @@ public class SSTableExport
                     JsonTransformer.keysToJson(null, Util.iterToStream(iter),
                                                cmd.hasOption(RAW_TIMESTAMPS),
                                                metadata,
-                                               System.out);
+                                               OutputStream.nullOutputStream());
                 }
             }
             else
