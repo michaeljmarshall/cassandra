@@ -34,6 +34,7 @@ import org.apache.cassandra.index.sai.disk.v3.V3OnDiskFormat;
 import org.apache.cassandra.index.sai.disk.v4.V4OnDiskFormat;
 import org.apache.cassandra.index.sai.disk.v5.V5OnDiskFormat;
 import org.apache.cassandra.index.sai.disk.v6.V6OnDiskFormat;
+import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -262,7 +263,7 @@ public class Version
     {
         return this == AA && component == IndexComponentType.TERMS_DATA
                ? sstableFormatVersion.getByteComparableVersion()
-               : ByteComparable.Version.OSS41;
+               : TypeUtil.BYTE_COMPARABLE_VERSION;
     }
 
     private static Optional<ParsedFileName> tryParseStargazerFileName(String componentStr)

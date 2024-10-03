@@ -42,9 +42,9 @@ import org.apache.cassandra.index.sai.disk.PerIndexWriter;
 import org.apache.cassandra.index.sai.disk.PerSSTableWriter;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.SearchableIndex;
-import org.apache.cassandra.index.sai.disk.format.IndexComponents;
-import org.apache.cassandra.index.sai.disk.format.IndexComponentType;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentType;
+import org.apache.cassandra.index.sai.disk.format.IndexComponents;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.format.IndexFeatureSet;
 import org.apache.cassandra.index.sai.disk.format.OnDiskFormat;
@@ -300,7 +300,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     @Override
     public ByteComparable encodeForTrie(ByteBuffer input, AbstractType<?> type)
     {
-        return TypeUtil.isLiteral(type) ? ByteComparable.fixedLength(input)
+        return TypeUtil.isLiteral(type) ? v -> ByteSource.preencoded(input)
                                         : TypeUtil.asComparableBytes(input, type);
     }
 
@@ -308,8 +308,8 @@ public class V1OnDiskFormat implements OnDiskFormat
     public ByteBuffer decodeFromTrie(ByteComparable value, AbstractType<?> type)
     {
         return TypeUtil.isLiteral(type)
-               ? ByteBuffer.wrap(ByteSourceInverse.readBytes(value.asComparableBytes(ByteComparable.Version.OSS41)))
-               : type.fromComparableBytes(value.asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
+               ? ByteBuffer.wrap(ByteSourceInverse.readBytes(value.asComparableBytes(TypeUtil.BYTE_COMPARABLE_VERSION)))
+               : type.fromComparableBytes(value.asPeekableBytes(TypeUtil.BYTE_COMPARABLE_VERSION), TypeUtil.BYTE_COMPARABLE_VERSION);
     }
 
     /** vector data components (that did not have checksums before v3) */

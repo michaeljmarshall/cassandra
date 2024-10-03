@@ -69,6 +69,12 @@ public class TypeUtil
      */
     public static final int DECIMAL_APPROXIMATION_BYTES = 24;
 
+    /**
+     * Byte comparable version currently used for all SAI files and structures, with the exception of terms data in
+     * the early AA on-disk format.
+     */
+    public static final ByteComparable.Version BYTE_COMPARABLE_VERSION = ByteComparable.Version.OSS41;
+
     private TypeUtil() {}
 
     /**
@@ -124,7 +130,7 @@ public class TypeUtil
      */
     public static ByteComparable min(ByteComparable a, ByteComparable b)
     {
-        return a == null ?  b : (b == null || ByteComparable.compare(b, a, ByteComparable.Version.OSS41) > 0) ? a : b;
+        return a == null ?  b : (b == null || ByteComparable.compare(b, a, BYTE_COMPARABLE_VERSION) > 0) ? a : b;
     }
 
     /**
@@ -133,7 +139,7 @@ public class TypeUtil
      */
     public static ByteComparable max(ByteComparable a, ByteComparable b)
     {
-        return a == null ?  b : (b == null || ByteComparable.compare(b, a, ByteComparable.Version.OSS41) < 0) ? a : b;
+        return a == null ?  b : (b == null || ByteComparable.compare(b, a, BYTE_COMPARABLE_VERSION) < 0) ? a : b;
     }
 
     /**
@@ -247,7 +253,7 @@ public class TypeUtil
         else if (type instanceof DecimalType)
             ByteBufferUtil.arrayCopy(value, value.hasArray() ? value.arrayOffset() + value.position() : value.position(), bytes, 0, DECIMAL_APPROXIMATION_BYTES);
         else
-            ByteBufferUtil.toBytes(type.asComparableBytes(value, ByteComparable.Version.OSS41), bytes);
+            ByteSourceInverse.readBytesMustFit(type.asComparableBytes(value, BYTE_COMPARABLE_VERSION), bytes);
     }
 
     /**
@@ -569,9 +575,10 @@ public class TypeUtil
 
     public static ByteBuffer encodeDecimal(ByteBuffer value)
     {
-        ByteSource bs = DecimalType.instance.asComparableBytes(value, ByteComparable.Version.OSS41);
-        bs = ByteSource.cutOrRightPad(bs, DECIMAL_APPROXIMATION_BYTES, 0);
-        return ByteBuffer.wrap(ByteSourceInverse.readBytes(bs, DECIMAL_APPROXIMATION_BYTES));
+        ByteSource bs = DecimalType.instance.asComparableBytes(value, BYTE_COMPARABLE_VERSION);
+        byte[] data = new byte[DECIMAL_APPROXIMATION_BYTES];    // initialized with 0s
+        bs.nextBytes(data); // reads up to the number of bytes in the array, leaving 0s in the remaining bytes
+        return ByteBuffer.wrap(data);
     }
 
 
@@ -593,7 +600,7 @@ public class TypeUtil
             return numberType.toBigDecimal(value);
         }
 
-        byte[] origBytes = ByteSourceInverse.readBytes(valueType.asComparableBytes(value, ByteComparable.Version.OSS41));
+        byte[] origBytes = ByteSourceInverse.readBytes(valueType.asComparableBytes(value, BYTE_COMPARABLE_VERSION));
         byte[] fixedLengthBytes = Arrays.copyOf(origBytes, 20);
         return new BigDecimal(new BigInteger(fixedLengthBytes));
     }

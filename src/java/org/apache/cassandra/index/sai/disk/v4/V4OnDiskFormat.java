@@ -54,7 +54,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
         // Composite types use their individual type to ensure they sorted correctly in the trie so we can do
         // range queries over entries.
         return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
-               ? ByteComparable.fixedLength(input)
+               ? v -> ByteSource.preencoded(input)
                : TypeUtil.asComparableBytes(input, type);
     }
 
@@ -62,7 +62,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     public ByteBuffer decodeFromTrie(ByteComparable value, AbstractType<?> type)
     {
         return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
-               ? ByteBuffer.wrap(ByteSourceInverse.readBytes(value.asComparableBytes(ByteComparable.Version.OSS41)))
-               : type.fromComparableBytes(value.asPeekableBytes(ByteComparable.Version.OSS41), ByteComparable.Version.OSS41);
+               ? ByteBuffer.wrap(ByteSourceInverse.readBytes(value.asComparableBytes(TypeUtil.BYTE_COMPARABLE_VERSION)))
+               : type.fromComparableBytes(value.asPeekableBytes(TypeUtil.BYTE_COMPARABLE_VERSION), TypeUtil.BYTE_COMPARABLE_VERSION);
     }
 }

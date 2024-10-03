@@ -386,7 +386,7 @@ public class SegmentMetadataBuilder
             if (type instanceof InetAddressType || type instanceof IntegerType || type instanceof DecimalType)
                 return (v) -> type.asComparableBytes(ByteBuffer.wrap(term), v);
 
-            return (v) -> ByteSource.fixedLength(term);
+            return (v) -> ByteSource.preencoded(term);
         }
 
     }
