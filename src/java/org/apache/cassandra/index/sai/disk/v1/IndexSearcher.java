@@ -147,7 +147,7 @@ public abstract class IndexSearcher implements Closeable, SegmentOrdering
     private ByteComparable encode(ByteBuffer input)
     {
         return indexContext.isLiteral() ? v -> ByteSource.preencoded(input)
-                                        : v -> TypeUtil.asComparableBytes(input, indexContext.getValidator(), v);
+                                        : v -> TypeUtil.asSAIComparableBytes(input, indexContext.getValidator(), v);
     }
 
     protected RangeIterator toPrimaryKeyIterator(PostingList postingList, QueryContext queryContext) throws IOException

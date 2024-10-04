@@ -211,12 +211,29 @@ public class TypeUtil
         return type.fromString(value);
     }
 
-    public static ByteComparable asComparableBytes(ByteBuffer value, AbstractType<?> type)
+    /**
+     * Convenience method to create a {@link ByteComparable} from a {@link ByteBuffer} value for a given {@link AbstractType}
+     * excluding {@link InetAddressType}, {@link IntegerType} and {@link DecimalType} which are handled separately.
+     *
+     * @param value the value to convert
+     * @param type the type of the value
+     * @return the {@link ByteComparable}
+     */
+    public static ByteComparable asSAIComparableBytes(ByteBuffer value, AbstractType<?> type)
     {
-        return version -> asComparableBytes(value, type, version);
+        return version -> asSAIComparableBytes(value, type, version);
     }
 
-    public static ByteSource asComparableBytes(ByteBuffer value, AbstractType<?> type, ByteComparable.Version version)
+    /**
+     * Convenience method to create a {@link ByteComparable} from a {@link ByteBuffer} value for a given {@link AbstractType}
+     * excluding {@link InetAddressType}, {@link IntegerType} and {@link DecimalType} which are handled separately.
+     *
+     * @param value the value to convert
+     * @param type the type of the value
+     * @param version the version to use when encoding the byte comparable
+     * @return the {@link ByteSource}
+     */
+    public static ByteSource asSAIComparableBytes(ByteBuffer value, AbstractType<?> type, ByteComparable.Version version)
     {
         if (type instanceof InetAddressType || type instanceof IntegerType || type instanceof DecimalType)
             return ByteSource.optionalFixedLength(ByteBufferAccessor.instance, value);
@@ -244,7 +261,7 @@ public class TypeUtil
      * @param type the type associated with the encoded {@code value} parameter
      * @param bytes this method's output
      */
-    public static void toComparableBytes(ByteBuffer value, AbstractType<?> type, byte[] bytes)
+    public static void toSAIComparableBytes(ByteBuffer value, AbstractType<?> type, byte[] bytes)
     {
         if (isInetAddress(type))
             ByteBufferUtil.arrayCopy(value, value.hasArray() ? value.arrayOffset() + value.position() : value.position(), bytes, 0, 16);
@@ -254,6 +271,22 @@ public class TypeUtil
             ByteBufferUtil.arrayCopy(value, value.hasArray() ? value.arrayOffset() + value.position() : value.position(), bytes, 0, DECIMAL_APPROXIMATION_BYTES);
         else
             ByteSourceInverse.readBytesMustFit(type.asComparableBytes(value, BYTE_COMPARABLE_VERSION), bytes);
+    }
+
+    /**
+     * The inverse of the {@link #toSAIComparableBytes} methods and the {@link #asSAIComparableBytes} methods.
+     * @param byteComparable the {@link ByteComparable} to convert
+     * @param type the type of the value
+     * @param version the version to use when decoding the byte comparable
+     * @return the {@link ByteBuffer} acording to the types normal encoding.
+     */
+    public static ByteBuffer fromSAIComparableBytes(ByteComparable byteComparable, AbstractType<?> type, ByteComparable.Version version)
+    {
+        if (type instanceof InetAddressType || type instanceof IntegerType || type instanceof DecimalType)
+            return ByteBuffer.wrap(ByteSourceInverse.readBytes(byteComparable.asComparableBytes(version)));
+
+        var peekableBytes = byteComparable.asPeekableBytes(version);
+        return type.fromComparableBytes(peekableBytes, version);
     }
 
     /**

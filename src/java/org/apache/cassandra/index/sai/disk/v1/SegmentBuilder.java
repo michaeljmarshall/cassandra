@@ -156,7 +156,7 @@ public abstract class SegmentBuilder
 
         protected long addInternal(ByteBuffer term, int segmentRowId)
         {
-            TypeUtil.toComparableBytes(term, termComparator, buffer);
+            TypeUtil.toSAIComparableBytes(term, termComparator, buffer);
             return kdTreeRamBuffer.addPackedValue(segmentRowId, new BytesRef(buffer));
         }
 

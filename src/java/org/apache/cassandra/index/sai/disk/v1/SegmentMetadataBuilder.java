@@ -355,7 +355,10 @@ public class SegmentMetadataBuilder
                 if (!Arrays.equals(term, lastTerm))
                 {
                     if (lastTerm != null)
-                        builder.add(encodeIfNeeded(lastTerm), count);
+                        // We have a ByteBuffer here, but we need it to be a ByteComparable. We do not
+                        // want to encode anything here, so we wrap it in an identity ByteComparable
+                        // mapper and then the ByteComparable will be encoded within the builder.
+                        builder.add((v) -> ByteSource.preencoded(lastTerm), count);
 
 
                     count = 0;
@@ -371,7 +374,8 @@ public class SegmentMetadataBuilder
         {
             if (lastTerm != null)
             {
-                builder.add(encodeIfNeeded(lastTerm), count);
+                // Same comment here as above when we use ByteSource.preencoded(lastTerm).
+                builder.add((v) -> ByteSource.preencoded(lastTerm), count);
             }
         }
 

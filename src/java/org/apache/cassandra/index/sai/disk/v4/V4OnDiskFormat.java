@@ -55,7 +55,7 @@ public class V4OnDiskFormat extends V3OnDiskFormat
         // range queries over entries.
         return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
                ? v -> ByteSource.preencoded(input)
-               : TypeUtil.asComparableBytes(input, type);
+               : TypeUtil.asSAIComparableBytes(input, type);
     }
 
     @Override
@@ -63,6 +63,6 @@ public class V4OnDiskFormat extends V3OnDiskFormat
     {
         return TypeUtil.isLiteral(type) && !TypeUtil.isComposite(type)
                ? ByteBuffer.wrap(ByteSourceInverse.readBytes(value.asComparableBytes(TypeUtil.BYTE_COMPARABLE_VERSION)))
-               : type.fromComparableBytes(value.asPeekableBytes(TypeUtil.BYTE_COMPARABLE_VERSION), TypeUtil.BYTE_COMPARABLE_VERSION);
+               : TypeUtil.fromSAIComparableBytes(value, type, TypeUtil.BYTE_COMPARABLE_VERSION);
     }
 }

@@ -301,7 +301,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     public ByteComparable encodeForTrie(ByteBuffer input, AbstractType<?> type)
     {
         return TypeUtil.isLiteral(type) ? v -> ByteSource.preencoded(input)
-                                        : TypeUtil.asComparableBytes(input, type);
+                                        : TypeUtil.asSAIComparableBytes(input, type);
     }
 
     @Override
@@ -309,7 +309,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     {
         return TypeUtil.isLiteral(type)
                ? ByteBuffer.wrap(ByteSourceInverse.readBytes(value.asComparableBytes(TypeUtil.BYTE_COMPARABLE_VERSION)))
-               : type.fromComparableBytes(value.asPeekableBytes(TypeUtil.BYTE_COMPARABLE_VERSION), TypeUtil.BYTE_COMPARABLE_VERSION);
+               : TypeUtil.fromSAIComparableBytes(value, type, TypeUtil.BYTE_COMPARABLE_VERSION);
     }
 
     /** vector data components (that did not have checksums before v3) */
