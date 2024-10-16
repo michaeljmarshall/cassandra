@@ -27,6 +27,7 @@ import org.apache.cassandra.dht.Token;
 import org.mockito.Mockito;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.when;
@@ -44,6 +45,10 @@ public class DelegatingShardManagerTest
         ShardManager delegate = new ShardManagerNoDisks(localRanges);
 
         DelegatingShardManager wrapper = new DelegatingShardManager((x) -> consumeTokens(delegate.boundaries(x)), 1);
+
+        assertEquals(1, wrapper.localSpaceCoverage(), 0);
+        assertEquals(1, wrapper.shardSetCoverage(), 0);
+        assertEquals(1, wrapper.minimumPerPartitionSpan(), 0);
 
         // We expect the same shards because the wrapper delegates.
         for (int i = 1; i < 512; i++)
