@@ -26,13 +26,13 @@ import org.apache.cassandra.io.compress.BufferType;
 
 import static org.junit.Assert.assertEquals;
 
-public class TrieMemtableIndexTest extends TrieMemtableIndexTestBase
+public class TrieMemtableIndexAllocationsHeapBuffersTest extends TrieMemtableIndexTestBase
 {
     @BeforeClass
-    public static void setShardCount()
+    public static void setUpClass()
     {
         System.setProperty("cassandra.trie.memtable.shard.count", "8");
-        setup(Config.MemtableAllocationType.offheap_buffers);
-        assertEquals(TrieMemtable.BUFFER_TYPE, BufferType.OFF_HEAP);
+        setup(Config.MemtableAllocationType.heap_buffers);
+        assertEquals(TrieMemtable.BUFFER_TYPE, BufferType.ON_HEAP);
     }
 }
