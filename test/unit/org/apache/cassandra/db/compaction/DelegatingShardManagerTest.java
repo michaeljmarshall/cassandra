@@ -42,10 +42,11 @@ public class DelegatingShardManagerTest
     {
         CompactionRealm realm = Mockito.mock(CompactionRealm.class);
         when(realm.getPartitioner()).thenReturn(partitioner);
+        when(realm.estimatedPartitionCount()).thenReturn(1L << 16);
         SortedLocalRanges localRanges = SortedLocalRanges.forTestingFull(realm);
         ShardManager delegate = new ShardManagerNoDisks(localRanges);
 
-        DelegatingShardManager wrapper = new DelegatingShardManager((x) -> consumeTokens(delegate.boundaries(x)), 1);
+        DelegatingShardManager wrapper = new DelegatingShardManager((x) -> consumeTokens(delegate.boundaries(x)), realm);
 
         var range = new Range<>(partitioner.getMinimumToken(), partitioner.getMinimumToken());
         assertEquals(1, wrapper.rangeSpanned(range), 0);
