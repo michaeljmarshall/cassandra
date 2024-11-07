@@ -55,9 +55,9 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SAITester;
+import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
-import org.apache.cassandra.index.sai.utils.RangeIterator;
 import org.apache.cassandra.index.sai.utils.TypeUtil;
 import org.apache.cassandra.inject.Injections;
 import org.apache.cassandra.inject.InvokePointBuilder;
@@ -190,7 +190,7 @@ public abstract class TrieMemtableIndexTestBase extends SAITester
 
             Set<Integer> foundKeys = new HashSet<>();
 
-            try (RangeIterator iterator = memtableIndex.search(new QueryContext(), expression, keyRange, 0))
+            try (KeyRangeIterator iterator = memtableIndex.search(new QueryContext(), expression, keyRange, 0))
             {
                 while (iterator.hasNext())
                 {
