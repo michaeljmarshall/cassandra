@@ -40,7 +40,7 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
     private final int limit;
     private final int rerankK;
     private final boolean inMemory;
-    private final Object source;
+    private final String source;
     private final IntConsumer nodesVisitedConsumer;
     private Iterator<SearchResult.NodeScore> nodeScores;
     private int cumulativeNodesVisited;
@@ -64,7 +64,7 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
                                          int limit,
                                          int rerankK,
                                          boolean inMemory,
-                                         Object source)
+                                         String source)
     {
         this.searcher = searcher;
         this.accessManager = accessManager;

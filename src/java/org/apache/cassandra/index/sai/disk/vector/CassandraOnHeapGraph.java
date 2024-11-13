@@ -111,7 +111,7 @@ public class CassandraOnHeapGraph<T> implements Accountable
     private static final VectorTypeSupport vts = VectorizationProvider.getInstance().getVectorTypeSupport();
 
     // We use the metable reference for easier tracing.
-    private final Memtable source;
+    private final String source;
     private final ConcurrentVectorValues vectorValues;
     private final GraphIndexBuilder builder;
     private final VectorType.VectorSerializer serializer;
@@ -133,7 +133,7 @@ public class CassandraOnHeapGraph<T> implements Accountable
      */
     public CassandraOnHeapGraph(IndexContext context, boolean forSearching, Memtable memtable)
     {
-        this.source = memtable;
+        this.source = memtable.getClass().getName() + '@' + Integer.toHexString(memtable.hashCode());
         var indexConfig = context.getIndexWriterConfig();
         var termComparator = context.getValidator();
         serializer = (VectorType.VectorSerializer) termComparator.getSerializer();
