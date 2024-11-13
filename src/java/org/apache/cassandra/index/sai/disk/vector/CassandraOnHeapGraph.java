@@ -133,7 +133,7 @@ public class CassandraOnHeapGraph<T> implements Accountable
      */
     public CassandraOnHeapGraph(IndexContext context, boolean forSearching, Memtable memtable)
     {
-        this.source = memtable.getClass().getName() + '@' + Integer.toHexString(memtable.hashCode());
+        this.source = memtable.getClass().getSimpleName() + '@' + Integer.toHexString(memtable.hashCode());
         var indexConfig = context.getIndexWriterConfig();
         var termComparator = context.getValidator();
         serializer = (VectorType.VectorSerializer) termComparator.getSerializer();
