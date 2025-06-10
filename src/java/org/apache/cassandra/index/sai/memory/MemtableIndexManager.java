@@ -19,6 +19,7 @@
 package org.apache.cassandra.index.sai.memory;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -134,47 +135,15 @@ public class MemtableIndexManager
                                    .orElse(null);
     }
 
-    public KeyRangeIterator searchMemtableIndexes(QueryContext queryContext, Expression e, AbstractBounds<PartitionPosition> keyRange)
-    {
-        Collection<MemtableIndex> memtableIndexes = liveMemtableIndexMap.values();
-
-        if (memtableIndexes.isEmpty())
-        {
-            return KeyRangeIterator.empty();
-        }
-
-        KeyRangeIterator.Builder builder = KeyRangeUnionIterator.builder(memtableIndexes.size());
-
-        for (MemtableIndex memtableIndex : memtableIndexes)
-        {
-            builder.add(memtableIndex.search(queryContext, e, keyRange));
-        }
-
-        return builder.build();
-    }
-
-    public KeyRangeIterator limitToTopResults(QueryContext context, List<PrimaryKey> source, Expression e)
-    {
-        Collection<MemtableIndex> memtables = liveMemtableIndexMap.values();
-
-        if (memtables.isEmpty())
-        {
-            return KeyRangeIterator.empty();
-        }
-
-        KeyRangeUnionIterator.Builder builder = KeyRangeUnionIterator.builder(memtables.size());
-
-        for (MemtableIndex index : memtables)
-        {
-            builder.add(index.limitToTopResults(source, e, context.vectorContext().limit()));
-        }
-
-        return builder.build();
-    }
-
     public long liveMemtableWriteCount()
     {
         return liveMemtableIndexMap.values().stream().mapToLong(MemtableIndex::writeCount).sum();
+    }
+
+    public Collection<MemtableIndex> getLiveMemtableIndexes()
+    {
+        // Copy the values. Otherwise, we'll only have a view of the map's values which is subject to change.
+        return new ArrayList<>(liveMemtableIndexMap.values());
     }
 
     public long estimatedMemIndexMemoryUsed()
