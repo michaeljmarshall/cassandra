@@ -114,7 +114,7 @@ public class QueryViewBuilder
                 continue;
 
             // Fetch the memtables first to ensure we don't miss any newly flushed memtable index
-            Collection<MemtableIndex> memtableIndexes = expression.getIndex().memtableIndexManager().getLiveMemtableIndexes();
+            Collection<MemtableIndex> memtableIndexes = expression.getIndex().memtableIndexManager().getLiveMemtableIndexesSnapshot();
             // Select all the sstable indexes that have a term range that is satisfied by this expression and
             // overlap with the key range being queried.
             View view = expression.getIndex().view();

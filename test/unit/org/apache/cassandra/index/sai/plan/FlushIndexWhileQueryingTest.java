@@ -39,8 +39,7 @@ public class FlushIndexWhileQueryingTest extends SAITester
     {
         createTable("CREATE TABLE %s (k text PRIMARY KEY, x int)");
 
-        createIndex("CREATE CUSTOM INDEX ON %s(x) USING 'StorageAttachedIndex'");
-        waitForTableIndexesQueryable();
+        createIndex("CREATE CUSTOM INDEX ON %s(x) USING 'sai'");
 
         execute("INSERT INTO %s (k, x) VALUES (?, ?)", "a", 0);
         execute("INSERT INTO %s (k, x) VALUES (?, ?)", "b", 0);

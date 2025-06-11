@@ -21,6 +21,7 @@ package org.apache.cassandra.index.sai.memory;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -132,10 +133,14 @@ public class MemtableIndexManager
         return liveMemtableIndexMap.values().stream().mapToLong(MemtableIndex::writeCount).sum();
     }
 
-    public Collection<MemtableIndex> getLiveMemtableIndexes()
+    public Collection<MemtableIndex> getLiveMemtableIndexesSnapshot()
     {
+        Collection<MemtableIndex> memtableIndexes = liveMemtableIndexMap.values();
+        if (memtableIndexes.isEmpty())
+            return Collections.emptyList();
+
         // Copy the values. Otherwise, we'll only have a view of the map's values which is subject to change.
-        return new ArrayList<>(liveMemtableIndexMap.values());
+        return new ArrayList<>(memtableIndexes);
     }
 
     public long estimatedMemIndexMemoryUsed()
