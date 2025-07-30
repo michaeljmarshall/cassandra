@@ -90,6 +90,7 @@ public class VectorQueryContext
     /**
      * @return shadowed primary keys, in ascending order
      */
+    // todo clean me up
     public NavigableSet<PrimaryKey> getShadowedPrimaryKeys()
     {
         if (shadowedPrimaryKeys == null)
@@ -193,3 +194,8 @@ public class VectorQueryContext
         }
     }
 }
+
+// the tradeoff here:
+// - do we want to accumulate shadowed keys
+// - do we want to just 'find" them again in the re-query of the offending segment. Seems like we should ignore
+// the ones we've already retreived, but the cost to map from other shadow to this shadow is high and unlikely to be a real problem

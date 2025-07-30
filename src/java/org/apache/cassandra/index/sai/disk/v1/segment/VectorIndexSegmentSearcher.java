@@ -41,8 +41,11 @@ import org.apache.cassandra.index.sai.disk.v1.PerColumnIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.postings.VectorPostingList;
 import org.apache.cassandra.index.sai.disk.v1.vector.DiskAnn;
 import org.apache.cassandra.index.sai.disk.v1.vector.OptimizeFor;
+import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
+import org.apache.cassandra.index.sai.disk.v1.vector.RowIdWithScore;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeListIterator;
+import org.apache.cassandra.index.sai.iterators.RowIdToPrimaryKeyWithScoreIterator;
 import org.apache.cassandra.index.sai.memory.VectorMemoryIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.postings.IntArrayPostingList;
@@ -50,7 +53,9 @@ import org.apache.cassandra.index.sai.postings.PostingList;
 import org.apache.cassandra.index.sai.utils.AtomicRatio;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.CloseableIterator;
 
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -87,7 +92,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     }
 
     @Override
-    public KeyRangeIterator search(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
         int limit = context.vectorContext().limit();
 
@@ -100,13 +105,13 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
         int topK = optimizeFor.topKFor(limit);
         BitsOrPostingList bitsOrPostingList = bitsOrPostingListForKeyRange(context.vectorContext(), keyRange, topK);
         if (bitsOrPostingList.skipANN())
-            return toPrimaryKeyIterator(bitsOrPostingList.postingList(), context);
+            return toScoreSortedIterator(bitsOrPostingList.postingList(), context);
 
         float[] queryVector = index.termType().decomposeVector(exp.lower().value.raw.duplicate());
-        VectorPostingList vectorPostings = graph.search(queryVector, topK, limit, bitsOrPostingList.getBits());
+        CloseableIterator<RowIdWithScore> result = graph.search(queryVector, topK, limit, bitsOrPostingList.getBits());
         if (bitsOrPostingList.expectedNodesVisited >= 0)
             updateExpectedNodes(vectorPostings.getVisitedCount(), bitsOrPostingList.expectedNodesVisited);
-        return toPrimaryKeyIterator(vectorPostings, context);
+        return toScoreSortedIterator(result, context);
     }
 
     /**
@@ -209,7 +214,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     }
 
     @Override
-    public KeyRangeIterator limitToTopKResults(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
     {
         int limit = context.vectorContext().limit();
         // VSTODO would it be better to do a binary search to find the boundaries?
@@ -218,7 +223,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
                                                   .takeWhile(k -> k.compareTo(metadata.maxKey) <= 0)
                                                   .collect(Collectors.toList());
         if (keysInRange.isEmpty())
-            return KeyRangeIterator.empty();
+            return CloseableIterator.empty();
         int topK = optimizeFor.topKFor(limit);
         if (shouldUseBruteForce(topK, limit, keysInRange.size()))
             return new KeyRangeListIterator(metadata.minKey, metadata.maxKey, keysInRange);
@@ -255,13 +260,13 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
             }
 
             if (shouldUseBruteForce(topK, limit, rowIds.size()))
-                return toPrimaryKeyIterator(new IntArrayPostingList(rowIds.toIntArray()), context);
+                return toScoreSortedIterator(new IntArrayPostingList(rowIds.toIntArray()), context);
 
             // else ask the index to perform a search limited to the bits we created
             float[] queryVector = index.termType().decomposeVector(expression.lower().value.raw.duplicate());
-            VectorPostingList results = graph.search(queryVector, topK, limit, bits);
+            CloseableIterator<RowIdWithScore> result = graph.search(queryVector, topK, limit, bits);
             updateExpectedNodes(results.getVisitedCount(), expectedNodesVisited(topK, maxSegmentRowId, graph.size()));
-            return toPrimaryKeyIterator(results, context);
+            return toScoreSortedIterator(result, context);
         }
     }
 
@@ -311,6 +316,29 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     public void close() throws IOException
     {
         graph.close();
+    }
+
+    private CloseableIterator<PrimaryKeyWithScore> toScoreSortedIterator(CloseableIterator<RowIdWithScore> rowIdIterator, QueryContext queryContext) throws IOException
+    {
+        if (rowIdIterator == null || !rowIdIterator.hasNext())
+        {
+            FileUtils.closeQuietly(rowIdIterator);
+            return CloseableIterator.emptyIterator();
+        }
+
+        IndexSegmentSearcherContext searcherContext = new IndexSegmentSearcherContext(metadata.minKey,
+                                                                               metadata.maxKey,
+                                                                               metadata.minSSTableRowId,
+                                                                               metadata.maxSSTableRowId,
+                                                                               metadata.segmentRowIdOffset,
+                                                                               queryContext,
+                                                                               null);
+        var pkm = primaryKeyMapFactory.newPerSSTablePrimaryKeyMap();
+        return new RowIdToPrimaryKeyWithScoreIterator(indexContext,
+                                                      pkm.getSSTableId(),
+                                                      rowIdIterator,
+                                                      pkm,
+                                                      searcherContext);
     }
 
     private static class BitsOrPostingList

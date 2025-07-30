@@ -36,12 +36,14 @@ import org.apache.cassandra.index.sai.StorageAttachedIndex;
 import org.apache.cassandra.index.sai.disk.SSTableIndex;
 import org.apache.cassandra.index.sai.disk.v1.segment.Segment;
 import org.apache.cassandra.index.sai.disk.v1.segment.SegmentMetadata;
+import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeUnionIterator;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.Throwables;
 
 import static org.apache.cassandra.index.sai.virtual.SegmentsSystemView.CELL_COUNT;
@@ -175,11 +177,12 @@ public class V1SSTableIndex extends SSTableIndex
     }
 
     @Override
-    public KeyRangeIterator limitToTopKResults(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
     {
+
         KeyRangeUnionIterator.Builder unionIteratorBuilder = KeyRangeUnionIterator.builder(segments.size());
         for (Segment segment : segments)
-            unionIteratorBuilder.add(segment.limitToTopKResults(context, primaryKeys, expression));
+            unionIteratorBuilder.add(segment.orderResultsBy(context, primaryKeys, expression));
 
         return unionIteratorBuilder.build();
     }

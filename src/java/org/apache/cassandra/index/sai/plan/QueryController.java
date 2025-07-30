@@ -23,8 +23,11 @@ import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -47,23 +50,28 @@ import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.guardrails.Guardrails;
+import org.apache.cassandra.db.rows.BaseRowIterator;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
+import org.apache.cassandra.db.transform.Transformation;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
 import org.apache.cassandra.index.sai.VectorQueryContext;
 import org.apache.cassandra.index.sai.disk.IndexSearchResultIterator;
 import org.apache.cassandra.index.sai.disk.SSTableIndex;
+import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.iterators.KeyRangeConcatIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIntersectionIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeOrderingIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeUnionIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.index.sai.utils.RowWithSourceTable;
 import org.apache.cassandra.net.ParamType;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.InsertionOrderedNavigableSet;
 import org.apache.cassandra.utils.Throwables;
 
@@ -84,6 +92,8 @@ public class QueryController
     private final int orderChunkSize;
 
     private final NavigableSet<Clustering<?>> nextClusterings;
+
+    private final Map<IndexContext, QueryViewBuilder.QueryView> queryViews = new HashMap<>();
 
     public QueryController(ColumnFamilyStore cfs,
                            ReadCommand command,
@@ -169,6 +179,38 @@ public class QueryController
                                                                                  makeFilter(keys));
 
         return partition.queryMemtableAndDisk(cfs, executionController);
+    }
+
+    /**
+     * Get an iterator over the rows for this partition key. Restrict the search to the specified view.
+     * @param key
+     * @param executionController
+     * @return
+     */
+    public UnfilteredRowIterator queryStorage(PrimaryKey key, ColumnFamilyStore.ViewFragment view, ReadExecutionController executionController)
+    {
+        if (key == null)
+            throw new IllegalArgumentException("non-null key required");
+
+        SinglePartitionReadCommand partition = SinglePartitionReadCommand.create(cfs.metadata(),
+                                                                                 command.nowInSec(),
+                                                                                 command.columnFilter(),
+                                                                                 RowFilter.none(),
+                                                                                 DataLimits.NONE,
+                                                                                 keys.get(0).partitionKey(),
+                                                                                 makeFilter(keys));
+
+        // Class to transform the row to include its source table.
+        Function<Object, Transformation<BaseRowIterator<?>>> rowTransformer = (Object sourceTable) -> new Transformation<>()
+        {
+            @Override
+            protected Row applyToRow(Row row)
+            {
+                return new RowWithSourceTable(row, sourceTable);
+            }
+        };
+
+        return partition.queryMemtableAndDisk(cfs, view, rowTransformer, executionController);
     }
 
     /**
@@ -353,7 +395,7 @@ public class QueryController
         return new KeyRangeOrderingIterator(source, orderChunkSize, list -> this.getTopKRows(list, expression));
     }
 
-    private KeyRangeIterator getTopKRows(List<PrimaryKey> rawSourceKeys, RowFilter.Expression expression)
+    private CloseableIterator<PrimaryKeyWithScore> getTopKRows(List<PrimaryKey> rawSourceKeys, RowFilter.Expression expression)
     {
         VectorQueryContext vectorQueryContext = queryContext.vectorContext();
         // Filter out PKs now. Each PK is passed to every segment of the ANN index, so filtering shadowed keys
@@ -383,7 +425,7 @@ public class QueryController
                                                                    .map(idx -> {
                                                                        try
                                                                        {
-                                                                           return idx.limitToTopKResults(queryContext, sourceKeys, planExpression);
+                                                                           return idx.orderResultsBy(queryContext, sourceKeys, planExpression);
                                                                        }
                                                                        catch (IOException e)
                                                                        {

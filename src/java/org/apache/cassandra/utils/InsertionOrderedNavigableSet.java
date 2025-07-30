@@ -30,6 +30,9 @@ import java.util.SortedSet;
 
 import com.google.common.base.Preconditions;
 
+import org.apache.cassandra.db.Clusterable;
+import org.apache.cassandra.index.sai.utils.PrimaryKey;
+
 /**
  * A {@link NavigableSet} that enforces in-order insertion of elements. This is helpful when we 
  * have an already-ordered collection with no duplicates and want constant time insertion.
@@ -38,12 +41,12 @@ import com.google.common.base.Preconditions;
  *
  * @param <E> the type of elements maintained by this set
  */
-public class InsertionOrderedNavigableSet<E> implements NavigableSet<E>
+public class InsertionOrderedNavigableSet<Clusterable<?>> implements NavigableSet<E>
 {
-    private final ArrayList<E> elements;
+    private final ArrayList<PrimaryKey> elements;
     private final Comparator<? super E> comparator;
 
-    public InsertionOrderedNavigableSet(Comparator<? super E> comparator)
+    public InsertionOrderedNavigableSet(Comparator<? super E> comparator, )
     {
         this.elements = new ArrayList<>();
         this.comparator = comparator;

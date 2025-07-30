@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.NavigableSet;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -34,6 +35,7 @@ import com.google.common.collect.Sets;
 import org.apache.cassandra.cache.IRowCacheEntry;
 import org.apache.cassandra.cache.RowCacheKey;
 import org.apache.cassandra.cache.RowCacheSentinel;
+import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
@@ -51,6 +53,7 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionIterators;
 import org.apache.cassandra.db.partitions.SingletonUnfilteredPartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
+import org.apache.cassandra.db.rows.BaseRowIterator;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.Rows;
@@ -658,10 +661,26 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
         assert executionController != null && executionController.validForReadOn(cfs);
         Tracing.trace("Executing single-partition query on {}", cfs.name);
 
-        return queryMemtableAndDiskInternal(cfs, executionController);
+        Tracing.trace("Acquiring sstable references");
+        ColumnFamilyStore.ViewFragment view = cfs.select(View.select(SSTableSet.LIVE, partitionKey()));
+        return queryMemtableAndDiskInternal(cfs, view, null, executionController);
     }
 
-    private UnfilteredRowIterator queryMemtableAndDiskInternal(ColumnFamilyStore cfs, ReadExecutionController controller)
+    public UnfilteredRowIterator queryMemtableAndDisk(ColumnFamilyStore cfs,
+                                                      ColumnFamilyStore.ViewFragment view,
+                                                      Function<Object, Transformation<BaseRowIterator<?>>> rowTransformer,
+                                                      ReadExecutionController executionController)
+    {
+        assert executionController != null && executionController.validForReadOn(cfs);
+        Tracing.trace("Executing single-partition query on {}", cfs.name);
+
+        return queryMemtableAndDiskInternal(cfs, view, rowTransformer, executionController);
+    }
+
+    private UnfilteredRowIterator queryMemtableAndDiskInternal(ColumnFamilyStore cfs,
+                                                               ColumnFamilyStore.ViewFragment view,
+                                                               Function<Object, Transformation<BaseRowIterator<?>>> rowTransformer,
+                                                               ReadExecutionController controller)
     {
         /*
          * We have 2 main strategies:
@@ -688,8 +707,6 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
             return queryMemtableAndSSTablesInTimestampOrder(cfs, (ClusteringIndexNamesFilter)clusteringIndexFilter(), controller);
         }
 
-        Tracing.trace("Acquiring sstable references");
-        ColumnFamilyStore.ViewFragment view = cfs.select(View.select(SSTableSet.LIVE, partitionKey()));
         view.sstables.sort(SSTableReader.maxTimestampDescending);
         ClusteringIndexFilter filter = clusteringIndexFilter();
         long minTimestamp = Long.MAX_VALUE;

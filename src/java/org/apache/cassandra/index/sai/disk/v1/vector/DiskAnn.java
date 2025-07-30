@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.PrimitiveIterator;
+import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
 import io.github.jbellis.jvector.disk.CachingGraphIndex;
@@ -42,6 +43,7 @@ import org.apache.cassandra.index.sai.disk.v1.postings.VectorPostingList;
 import org.apache.cassandra.index.sai.disk.v1.segment.SegmentMetadata;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.CloseableIterator;
 
 public class DiskAnn implements AutoCloseable
 {
@@ -89,7 +91,7 @@ public class DiskAnn implements AutoCloseable
     /**
      * @return Row IDs associated with the topK vectors near the query
      */
-    public VectorPostingList search(float[] queryVector, int topK, int limit, Bits acceptBits)
+    public CloseableIterator<RowIdWithScore> search(float[] queryVector, int topK, int limit, Bits acceptBits)
     {
         OnHeapGraph.validateIndexable(queryVector, similarityFunction);
 
