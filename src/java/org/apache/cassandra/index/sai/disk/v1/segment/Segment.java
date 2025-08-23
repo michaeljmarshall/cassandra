@@ -32,10 +32,12 @@ import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.v1.PerColumnIndexFiles;
+import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.CloseableIterator;
 
 /**
  * Each segment represents an on-disk index structure (balanced tree/terms/postings) flushed by memory limit or token boundaries.
@@ -113,9 +115,9 @@ public class Segment implements SegmentOrdering, Closeable
     }
 
     @Override
-    public KeyRangeIterator limitToTopKResults(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
     {
-        return index.limitToTopKResults(context, primaryKeys, expression);
+        return index.orderResultsBy(context, primaryKeys, expression);
     }
 
     @Override

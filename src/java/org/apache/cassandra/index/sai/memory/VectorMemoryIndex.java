@@ -41,6 +41,7 @@ import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
 import org.apache.cassandra.index.sai.VectorQueryContext;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.utils.IndexIdentifier;
 import org.apache.cassandra.index.sai.disk.v1.segment.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.v1.vector.OnHeapGraph;
@@ -51,6 +52,7 @@ import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.PrimaryKeys;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.bytecomparable.ByteComparable;
 
@@ -149,7 +151,7 @@ public class VectorMemoryIndex extends MemoryIndex
     }
 
     @Override
-    public KeyRangeIterator search(QueryContext queryContext, Expression expr, AbstractBounds<PartitionPosition> keyRange)
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(QueryContext queryContext, Expression expr, AbstractBounds<PartitionPosition> keyRange, int limit)
     {
         assert expr.getIndexOperator() == Expression.IndexOperator.ANN : "Only ANN is supported for vector search, received " + expr.getIndexOperator();
 
@@ -176,7 +178,7 @@ public class VectorMemoryIndex extends MemoryIndex
                 resultKeys = resultKeys.stream().filter(pk -> !vectorQueryContext.containsShadowedPrimaryKey(pk)).collect(Collectors.toSet());
 
             if (resultKeys.isEmpty())
-                return KeyRangeIterator.empty();
+                return CloseableIterator.empty();
 
             int bruteForceRows = maxBruteForceRows(vectorQueryContext.limit(), resultKeys.size(), graph.size());
             Tracing.trace("Search range covers {} rows; max brute force rows is {} for memtable index with {} nodes, LIMIT {}",
@@ -194,16 +196,16 @@ public class VectorMemoryIndex extends MemoryIndex
 
         PriorityQueue<PrimaryKey> keyQueue = graph.search(qv, queryContext.vectorContext().limit(), bits);
         if (keyQueue.isEmpty())
-            return KeyRangeIterator.empty();
+            return CloseableIterator.empty();
         return new ReorderingRangeIterator(keyQueue);
     }
 
     @Override
-    public KeyRangeIterator limitToTopResults(List<PrimaryKey> primaryKeys, Expression expression, int limit)
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression expression, int limit)
     {
         if (minimumKey == null)
             // This case implies maximumKey is empty too.
-            return KeyRangeIterator.empty();
+            return CloseableIterator.empty();
 
         List<PrimaryKey> results = primaryKeys.stream()
                                               .dropWhile(k -> k.compareTo(minimumKey) < 0)
@@ -216,7 +218,7 @@ public class VectorMemoryIndex extends MemoryIndex
         if (results.size() <= maxBruteForceRows)
         {
             if (results.isEmpty())
-                return KeyRangeIterator.empty();
+                return CloseableIterator.empty();
             return new KeyRangeListIterator(minimumKey, maximumKey, results);
         }
 
@@ -225,7 +227,7 @@ public class VectorMemoryIndex extends MemoryIndex
         KeyFilteringBits bits = new KeyFilteringBits(results);
         PriorityQueue<PrimaryKey> keyQueue = graph.search(qv, limit, bits);
         if (keyQueue.isEmpty())
-            return KeyRangeIterator.empty();
+            return CloseableIterator.empty();
         return new ReorderingRangeIterator(keyQueue);
     }
 
@@ -318,36 +320,6 @@ public class VectorMemoryIndex extends MemoryIndex
         public int length()
         {
             return graph.size();
-        }
-    }
-
-    private class ReorderingRangeIterator extends KeyRangeIterator
-    {
-        private final PriorityQueue<PrimaryKey> keyQueue;
-
-        ReorderingRangeIterator(PriorityQueue<PrimaryKey> keyQueue)
-        {
-            super(minimumKey, maximumKey, keyQueue.size());
-            this.keyQueue = keyQueue;
-        }
-
-        @Override
-        // VSTODO maybe we can abuse "current" to avoid having to pop and re-add the last skipped key
-        protected void performSkipTo(PrimaryKey nextKey)
-        {
-            while (!keyQueue.isEmpty() && keyQueue.peek().compareTo(nextKey) < 0)
-                keyQueue.poll();
-        }
-
-        @Override
-        public void close() {}
-
-        @Override
-        protected PrimaryKey computeNext()
-        {
-            if (keyQueue.isEmpty())
-                return endOfData();
-            return keyQueue.poll();
         }
     }
 

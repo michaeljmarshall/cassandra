@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.utils;
 
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
@@ -24,6 +25,17 @@ import java.util.NoSuchElementException;
 public interface CloseableIterator<T> extends Iterator<T>, AutoCloseable
 {
     public void close();
+
+    CloseableIterator<Object> EMPTY = CloseableIterator.wrap(Collections.emptyIterator());
+
+    /**
+     * Returns an empty {@link CloseableIterator}.
+     */
+    @SuppressWarnings("unchecked")
+    static <T> CloseableIterator<T> emptyIterator()
+    {
+        return (CloseableIterator<T>) EMPTY;
+    }
 
     public static <T> CloseableIterator<T> wrap(Iterator<T> iter)
     {

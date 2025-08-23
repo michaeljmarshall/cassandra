@@ -23,9 +23,11 @@ import java.util.List;
 
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.QueryContext;
+import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.utils.CloseableIterator;
 
 /**
  * A {@link SegmentOrdering} orders and limits a list of {@link PrimaryKey}s.
@@ -51,7 +53,7 @@ public interface SegmentOrdering
     /**
      * Reorder, limit, and put back into original order the results from a single sstable
      */
-    default KeyRangeIterator limitToTopKResults(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    default CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
     {
         throw new UnsupportedOperationException();
     }
