@@ -29,6 +29,7 @@ import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
@@ -49,12 +50,12 @@ public class MemtableIndex implements MemtableOrdering
     private final MemoryIndex memoryIndex;
     private final LongAdder writeCount = new LongAdder();
     private final LongAdder estimatedMemoryUsed = new LongAdder();
-    private final AbstractType<?> type;
+    private final Memtable memtable;
 
-    public MemtableIndex(StorageAttachedIndex index)
+    public MemtableIndex(StorageAttachedIndex index, Memtable memtable)
     {
-        this.memoryIndex = index.termType().isVector() ? new VectorMemoryIndex(index) : new TrieMemoryIndex(index);
-        this.type = index.termType().indexType();
+        this.memoryIndex = index.termType().isVector() ? new VectorMemoryIndex(index, memtable) : new TrieMemoryIndex(index);
+        this.memtable = memtable;
     }
 
     public long writeCount()
@@ -70,6 +71,11 @@ public class MemtableIndex implements MemtableOrdering
     public boolean isEmpty()
     {
         return memoryIndex.isEmpty();
+    }
+
+    public Memtable getMemtable()
+    {
+        return memtable;
     }
 
     public ByteBuffer getMinTerm()
@@ -116,8 +122,14 @@ public class MemtableIndex implements MemtableOrdering
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> limitToTopResults(List<PrimaryKey> primaryKeys, Expression expression, int limit)
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(QueryContext queryContext, Expression expression, AbstractBounds<PartitionPosition> keyRange, int limit)
     {
-        return memoryIndex.limitToTopResults(primaryKeys, expression, limit);
+        return memoryIndex.orderBy(queryContext, expression, keyRange, limit);
+    }
+
+    @Override
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression expression, int limit)
+    {
+        return memoryIndex.orderResultsBy(queryContext, primaryKeys, expression, limit);
     }
 }

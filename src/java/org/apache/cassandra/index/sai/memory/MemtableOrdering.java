@@ -43,9 +43,9 @@ public interface MemtableOrdering
      * @return an iterator over the results in score order.
      */
     CloseableIterator<PrimaryKeyWithScore> orderBy(QueryContext queryContext,
-                                                         Expression expression,
-                                                         AbstractBounds<PartitionPosition> keyRange,
-                                                         int limit);
+                                                   Expression expression,
+                                                   AbstractBounds<PartitionPosition> keyRange,
+                                                   int limit);
 
     /**
      * Order the given list of {@link PrimaryKey} results corresponding to the given expression.

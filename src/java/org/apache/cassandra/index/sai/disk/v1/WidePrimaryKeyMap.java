@@ -34,6 +34,7 @@ import org.apache.cassandra.index.sai.disk.v1.bitpack.NumericValuesMeta;
 import org.apache.cassandra.index.sai.disk.v1.keystore.KeyLookupMeta;
 import org.apache.cassandra.index.sai.disk.v1.keystore.KeyLookup;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
+import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
@@ -65,6 +66,7 @@ public class WidePrimaryKeyMap extends SkinnyPrimaryKeyMap
         private final FileHandle clusteringKeyBlockOffsetsFile;
         private final FileHandle clustingingKeyBlocksFile;
         private final FileHandle partitionToSizeFile;
+        private final SSTableId sstableId;
 
         public Factory(IndexDescriptor indexDescriptor, SSTableReader sstable)
         {
@@ -82,6 +84,7 @@ public class WidePrimaryKeyMap extends SkinnyPrimaryKeyMap
                 NumericValuesMeta clusteringKeyBlockOffsetsMeta = new NumericValuesMeta(metadataSource.get(indexDescriptor.componentName(IndexComponent.CLUSTERING_KEY_BLOCK_OFFSETS)));
                 KeyLookupMeta clusteringKeyMeta = new KeyLookupMeta(metadataSource.get(indexDescriptor.componentName(IndexComponent.CLUSTERING_KEY_BLOCKS)));
                 this.clusteringKeyReader = new KeyLookup(clustingingKeyBlocksFile, clusteringKeyBlockOffsetsFile, clusteringKeyMeta, clusteringKeyBlockOffsetsMeta);
+                this.sstableId = sstable.descriptor.id;
             }
             catch (Throwable t)
             {
@@ -103,7 +106,8 @@ public class WidePrimaryKeyMap extends SkinnyPrimaryKeyMap
                                          partitionKeyReader.openCursor(),
                                          clusteringKeyReader.openCursor(),
                                          primaryKeyFactory,
-                                         clusteringComparator);
+                                         clusteringComparator,
+                                         sstableId);
         }
 
         @Override
@@ -124,9 +128,10 @@ public class WidePrimaryKeyMap extends SkinnyPrimaryKeyMap
                               KeyLookup.Cursor partitionKeyCursor,
                               KeyLookup.Cursor clusteringKeyCursor,
                               PrimaryKey.Factory primaryKeyFactory,
-                              ClusteringComparator clusteringComparator)
+                              ClusteringComparator clusteringComparator,
+                              SSTableId sstableId)
     {
-        super(rowIdToTokenArray, rowIdToPartitionIdArray, partitionKeyCursor, primaryKeyFactory);
+        super(rowIdToTokenArray, rowIdToPartitionIdArray, partitionKeyCursor, primaryKeyFactory, sstableId);
 
         this.partitionIdToSizeArray = partitionIdToSizeArray;
         this.clusteringComparator = clusteringComparator;

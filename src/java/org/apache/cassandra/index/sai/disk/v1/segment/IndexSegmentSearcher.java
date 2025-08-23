@@ -23,14 +23,17 @@ import java.io.IOException;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.QueryContext;
+import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.v1.PerColumnIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.postings.PostingListRangeIterator;
+import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.postings.PeekablePostingList;
 import org.apache.cassandra.index.sai.postings.PostingList;
+import org.apache.cassandra.utils.CloseableIterator;
 
 /**
  * Abstract reader for individual segments of an on-disk index.
@@ -56,17 +59,17 @@ public abstract class IndexSegmentSearcher implements SegmentOrdering, Closeable
         this.index = index;
     }
 
-    public static IndexSegmentSearcher open(PrimaryKeyMap.Factory primaryKeyMapFactory,
+    public static IndexSegmentSearcher open(SSTableContext sstableContext,
                                             PerColumnIndexFiles indexFiles,
                                             SegmentMetadata segmentMetadata,
                                             StorageAttachedIndex index) throws IOException
     {
         if (index.termType().isVector())
-            return new VectorIndexSegmentSearcher(primaryKeyMapFactory, indexFiles, segmentMetadata, index);
+            return new VectorIndexSegmentSearcher(sstableContext, indexFiles, segmentMetadata, index);
         else if (index.termType().isLiteral())
-            return new LiteralIndexSegmentSearcher(primaryKeyMapFactory, indexFiles, segmentMetadata, index);
+            return new LiteralIndexSegmentSearcher(sstableContext.primaryKeyMapFactory, indexFiles, segmentMetadata, index);
         else
-            return new NumericIndexSegmentSearcher(primaryKeyMapFactory, indexFiles, segmentMetadata, index);
+            return new NumericIndexSegmentSearcher(sstableContext.primaryKeyMapFactory, indexFiles, segmentMetadata, index);
     }
 
     /**
@@ -83,6 +86,26 @@ public abstract class IndexSegmentSearcher implements SegmentOrdering, Closeable
      * @return {@link KeyRangeIterator} with matches for the given expression
      */
     public abstract KeyRangeIterator search(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext) throws IOException;
+
+    /**
+     * Order the rows by the given Orderer.  Used for ORDER BY clause when
+     * (1) the WHERE predicate is either a partition restriction or a range restriction on the index,
+     * (2) there is no WHERE predicate, or
+     * (3) the planner determines it is better to post-filter the ordered results by the predicate.
+     *
+     * @param orderer      the object containing the ordering logic
+     * @param slice        optional predicate to get a slice of the index
+     * @param keyRange     key range specific in read command, used by ANN index
+     * @param queryContext to track per sstable cache and per query metrics
+     * @param limit        the initial num of rows to returned, used by ANN index. More rows may be requested if filtering throws away more than expected!
+     * @return an iterator of {@link PrimaryKeyWithScore} in score order
+     */
+//    public CloseableIterator<PrimaryKeyWithScore> orderBy(Orderer orderer, Expression slice, AbstractBounds<PartitionPosition> keyRange, QueryContext queryContext, int limit) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    {
+        throw new UnsupportedOperationException();
+    }
+
 
     KeyRangeIterator toPrimaryKeyIterator(PostingList postingList, QueryContext queryContext) throws IOException
     {

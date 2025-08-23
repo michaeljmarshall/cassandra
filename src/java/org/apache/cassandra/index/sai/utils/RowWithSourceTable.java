@@ -35,11 +35,13 @@ import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.Digest;
 import org.apache.cassandra.db.LivenessInfo;
 import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.ColumnData;
 import org.apache.cassandra.db.rows.ComplexColumnData;
 import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.BiLongAccumulator;
@@ -61,6 +63,7 @@ public class RowWithSourceTable implements Row
 
     public RowWithSourceTable(Row row, Object source)
     {
+//        assert source instanceof Memtable || source instanceof SSTableId : "Expected Memtable or SSTableId, got " + source;
         this.row = row;
         this.source = source;
     }
@@ -138,7 +141,7 @@ public class RowWithSourceTable implements Row
     }
 
     @Override
-    public boolean hasLiveData(int nowInSec, boolean enforceStrictLiveness)
+    public boolean hasLiveData(long nowInSec, boolean enforceStrictLiveness)
     {
         return row.hasLiveData(nowInSec, enforceStrictLiveness);
     }
@@ -201,7 +204,7 @@ public class RowWithSourceTable implements Row
     }
 
     @Override
-    public boolean hasDeletion(int nowInSec)
+    public boolean hasDeletion(long nowInSec)
     {
         return row.hasDeletion(nowInSec);
     }
@@ -244,7 +247,13 @@ public class RowWithSourceTable implements Row
     }
 
     @Override
-    public Row purge(DeletionPurger purger, int nowInSec, boolean enforceStrictLiveness)
+    public Row purgeDataOlderThan(long timestamp, boolean enforceStrictLiveness)
+    {
+        return maybeWrapRow(row.purgeDataOlderThan(timestamp, enforceStrictLiveness));
+    }
+
+    @Override
+    public Row purge(DeletionPurger purger, long nowInSec, boolean enforceStrictLiveness)
     {
         return maybeWrapRow(row.purge(purger, nowInSec, enforceStrictLiveness));
     }
@@ -280,9 +289,9 @@ public class RowWithSourceTable implements Row
     }
 
     @Override
-    public int dataSizeBeforePurge()
+    public long unsharedHeapSize()
     {
-        return row.dataSizeBeforePurge();
+        return row.unsharedHeapSize() + EMPTY_SIZE;
     }
 
     @Override
@@ -301,18 +310,6 @@ public class RowWithSourceTable implements Row
     public String toString(TableMetadata metadata, boolean includeClusterKeys, boolean fullDetails)
     {
         return row.toString(metadata, includeClusterKeys, fullDetails);
-    }
-
-    @Override
-    public long minTimestamp()
-    {
-        return row.minTimestamp();
-    }
-
-    @Override
-    public long maxTimestamp()
-    {
-        return row.maxTimestamp();
     }
 
     @Override

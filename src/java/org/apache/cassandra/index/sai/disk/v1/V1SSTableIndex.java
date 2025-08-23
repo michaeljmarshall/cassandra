@@ -176,15 +176,28 @@ public class V1SSTableIndex extends SSTableIndex
         return segmentIterators;
     }
 
-    @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
-
-        KeyRangeUnionIterator.Builder unionIteratorBuilder = KeyRangeUnionIterator.builder(segments.size());
+        // Return a list to allow the caller to merge the results from multiple sstables into a single iterator.
+        List<CloseableIterator<PrimaryKeyWithScore>> iterators = new ArrayList<>(segments.size());
         for (Segment segment : segments)
-            unionIteratorBuilder.add(segment.orderResultsBy(context, primaryKeys, expression));
+        {
+            if (segment.intersects(keyRange))
+            {
+                iterators.add(segment.orderBy(exp, keyRange, context));
+            }
+        }
+        return iterators;
+    }
 
-        return unionIteratorBuilder.build();
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    {
+        // Return a list to allow the caller to merge the results from multiple sstables into a single iterator.
+        List<CloseableIterator<PrimaryKeyWithScore>> iterators = new ArrayList<>(segments.size());
+        for (Segment segment : segments)
+            iterators.add(segment.orderResultsBy(context, primaryKeys, expression));
+
+        return iterators;
     }
 
     @Override

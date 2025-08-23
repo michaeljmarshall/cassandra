@@ -16,15 +16,14 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.index.sai.iterators;
+package org.apache.cassandra.index.sai.disk.v1.vector;
 
-import org.apache.cassandra.index.sai.IndexContext;
-import org.apache.cassandra.index.sai.disk.IndexSearcherContext;
+import java.io.IOException;
+
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
-import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
-import org.apache.cassandra.index.sai.disk.v1.vector.RowIdWithScore;
 import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
@@ -34,23 +33,22 @@ import org.apache.cassandra.utils.CloseableIterator;
  */
 public class RowIdToPrimaryKeyWithScoreIterator extends AbstractIterator<PrimaryKeyWithScore>
 {
-    private final IndexContext indexContext;
-    private final SSTableId<?> sstableId;
+    private final ColumnMetadata column;
+    private final SSTableId sstableId;
     private final PrimaryKeyMap primaryKeyMap;
     private final CloseableIterator<RowIdWithScore> scoredRowIdIterator;
-    private final IndexSearcherContext searcherContext;
+    private final long segmentRowIdOffset;
 
-    public RowIdToPrimaryKeyWithSortKeyIterator(IndexContext indexContext,
-                                                SSTableId<?> sstableId,
-                                                CloseableIterator<RowIdWithScore> scoredRowIdIterator,
-                                                PrimaryKeyMap primaryKeyMap,
-                                                IndexSearcherContext context)
+    public RowIdToPrimaryKeyWithScoreIterator(ColumnMetadata column,
+                                              PrimaryKeyMap.Factory primaryKeyMapFactory,
+                                              CloseableIterator<RowIdWithScore> scoredRowIdIterator,
+                                              long segmentRowIdOffset) throws IOException
     {
-        this.indexContext = indexContext;
-        this.sstableId = sstableId;
+        this.column = column;
         this.scoredRowIdIterator = scoredRowIdIterator;
-        this.primaryKeyMap = primaryKeyMap;
-        this.searcherContext = context;
+        this.primaryKeyMap = primaryKeyMapFactory.newPerSSTablePrimaryKeyMap();
+        this.sstableId = primaryKeyMap.getSSTableId();
+        this.segmentRowIdOffset = segmentRowIdOffset;
     }
 
     @Override
@@ -58,8 +56,8 @@ public class RowIdToPrimaryKeyWithScoreIterator extends AbstractIterator<Primary
     {
         if (!scoredRowIdIterator.hasNext())
             return endOfData();
-        var rowIdWithMeta = scoredRowIdIterator.next();
-        return rowIdWithMeta.buildPrimaryKeyWithScore(indexContext, sstableId, primaryKeyMap, searcherContext.getSegmentRowIdOffset());
+        RowIdWithScore rowIdWithScore = scoredRowIdIterator.next();
+        return rowIdWithScore.buildPrimaryKeyWithScore(column, sstableId, primaryKeyMap, segmentRowIdOffset);
     }
 
     @Override

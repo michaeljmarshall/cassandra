@@ -49,10 +49,6 @@ import org.apache.cassandra.index.sai.utils.PrimaryKey;
 public class VectorQueryContext
 {
     private final int limit;
-    // Holds primary keys that are shadowed by expired TTL or row tombstone or range tombstone.
-    // They are populated by the StorageAttachedIndexSearcher during filtering. They are used to generate
-    // a bitset for the graph search to indicate graph nodes to ignore.
-    private TreeSet<PrimaryKey> shadowedPrimaryKeys;
 
     public VectorQueryContext(ReadCommand readCommand)
     {
@@ -64,86 +60,46 @@ public class VectorQueryContext
         return limit;
     }
 
-    public void recordShadowedPrimaryKeys(Set<PrimaryKey> keys)
-    {
-        if (shadowedPrimaryKeys == null)
-            shadowedPrimaryKeys = new TreeSet<>();
-        shadowedPrimaryKeys.addAll(keys);
-    }
-
-    // Returns true if the row ID will be included or false if the row ID will be shadowed
-    public boolean shouldInclude(long sstableRowId, PrimaryKeyMap primaryKeyMap)
-    {
-        return shadowedPrimaryKeys == null || !shadowedPrimaryKeys.contains(primaryKeyMap.primaryKeyFromRowId(sstableRowId));
-    }
-
-    public boolean shouldInclude(PrimaryKey pk)
-    {
-        return shadowedPrimaryKeys == null || !shadowedPrimaryKeys.contains(pk);
-    }
-
-    public boolean containsShadowedPrimaryKey(PrimaryKey primaryKey)
-    {
-        return shadowedPrimaryKeys != null && shadowedPrimaryKeys.contains(primaryKey);
-    }
-
-    /**
-     * @return shadowed primary keys, in ascending order
-     */
-    // todo clean me up
-    public NavigableSet<PrimaryKey> getShadowedPrimaryKeys()
-    {
-        if (shadowedPrimaryKeys == null)
-            return Collections.emptyNavigableSet();
-        return shadowedPrimaryKeys;
-    }
-
-    public Bits bitsetForShadowedPrimaryKeys(OnHeapGraph<PrimaryKey> graph)
-    {
-        if (shadowedPrimaryKeys == null)
-            return null;
-
-        return new IgnoredKeysBits(graph, shadowedPrimaryKeys);
-    }
-
-    public Bits bitsetForShadowedPrimaryKeys(SegmentMetadata metadata, PrimaryKeyMap primaryKeyMap, DiskAnn graph) throws IOException
-    {
-        Set<Integer> ignoredOrdinals = null;
-        try (var ordinalsView = graph.getOrdinalsView())
-        {
-            for (PrimaryKey primaryKey : getShadowedPrimaryKeys())
-            {
-                // not in current segment
-                if (primaryKey.compareTo(metadata.minKey) < 0 || primaryKey.compareTo(metadata.maxKey) > 0)
-                    continue;
-
-                long sstableRowId = primaryKeyMap.rowIdFromPrimaryKey(primaryKey);
-                if (sstableRowId == Long.MAX_VALUE) // not found
-                    continue;
-
-                int segmentRowId = Math.toIntExact(sstableRowId - metadata.rowIdOffset);
-                // not in segment yet
-                if (segmentRowId < 0)
-                    continue;
-                // end of segment
-                if (segmentRowId > metadata.maxSSTableRowId)
-                    break;
-
-                int ordinal = ordinalsView.getOrdinalForRowId(segmentRowId);
-                if (ordinal >= 0)
-                {
-                    if (ignoredOrdinals == null)
-                        ignoredOrdinals = new HashSet<>();
-                    ignoredOrdinals.add(ordinal);
-                }
-            }
-        }
-
-        if (ignoredOrdinals == null)
-            return null;
-
-        return new IgnoringBits(ignoredOrdinals, metadata);
-    }
+//
+//    public Bits bitsetForShadowedPrimaryKeys(SegmentMetadata metadata, PrimaryKeyMap primaryKeyMap, DiskAnn graph) throws IOException
+//    {
+//        Set<Integer> ignoredOrdinals = null;
+//        try (var ordinalsView = graph.getOrdinalsView())
+//        {
+//            // todo clean me up
+//            for (PrimaryKey primaryKey : getShadowedPrimaryKeys())
+//            {
+//                // not in current segment
+//                if (primaryKey.compareTo(metadata.minKey) < 0 || primaryKey.compareTo(metadata.maxKey) > 0)
+//                    continue;
+//
+//                long sstableRowId = primaryKeyMap.rowIdFromPrimaryKey(primaryKey);
+//                if (sstableRowId == Long.MAX_VALUE) // not found
+//                    continue;
+//
+//                int segmentRowId = Math.toIntExact(sstableRowId - metadata.rowIdOffset);
+//                // not in segment yet
+//                if (segmentRowId < 0)
+//                    continue;
+//                // end of segment
+//                if (segmentRowId > metadata.maxSSTableRowId)
+//                    break;
+//
+//                int ordinal = ordinalsView.getOrdinalForRowId(segmentRowId);
+//                if (ordinal >= 0)
+//                {
+//                    if (ignoredOrdinals == null)
+//                        ignoredOrdinals = new HashSet<>();
+//                    ignoredOrdinals.add(ordinal);
+//                }
+//            }
+//        }
+//
+//        if (ignoredOrdinals == null)
+//            return null;
+//
+//        return new IgnoringBits(ignoredOrdinals, metadata);
+//    }
 
     private static class IgnoringBits implements Bits
     {
@@ -174,6 +130,7 @@ public class VectorQueryContext
         private final OnHeapGraph<PrimaryKey> graph;
         private final NavigableSet<PrimaryKey> ignored;
 
+        // todo do we need you?
         public IgnoredKeysBits(OnHeapGraph<PrimaryKey> graph, NavigableSet<PrimaryKey> ignored)
         {
             this.graph = graph;

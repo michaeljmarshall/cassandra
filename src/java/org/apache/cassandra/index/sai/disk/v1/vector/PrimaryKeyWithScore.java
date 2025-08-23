@@ -18,19 +18,12 @@
 
 package org.apache.cassandra.index.sai.disk.v1.vector;
 
-import java.nio.ByteBuffer;
-
-import io.github.jbellis.jvector.util.RamUsageEstimator;
-import org.apache.cassandra.db.Clustering;
-import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.Row;
-import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.index.sai.utils.CellWithSourceTable;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.io.sstable.SSTableId;
-import org.apache.cassandra.utils.bytecomparable.ByteComparable;
-import org.apache.cassandra.utils.bytecomparable.ByteSource;
+import org.apache.cassandra.schema.ColumnMetadata;
 
 /**
  * A PrimaryKey with one piece of metadata. Subclasses define the metadata, and to prevent unnecessary boxing, the
@@ -38,26 +31,26 @@ import org.apache.cassandra.utils.bytecomparable.ByteSource;
  * to compare the PrimaryKey objects.
  * Note: this class has a natural ordering that is inconsistent with equals.
  */
-public abstract class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithScore>
+public class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithScore>
 {
-    protected final IndexContext context;
+    protected final ColumnMetadata columnMetadata;
     private final PrimaryKey primaryKey;
     // Either a Memtable reference or an SSTableId reference
     private final Object sourceTable;
 
     private final float indexScore;
 
-    protected PrimaryKeyWithSortKey(IndexContext context, Memtable sourceTable, PrimaryKey primaryKey, float indexScore)
+    public PrimaryKeyWithScore(ColumnMetadata columnMetadata, Memtable sourceTable, PrimaryKey primaryKey, float indexScore)
     {
-        this.context = context;
+        this.columnMetadata = columnMetadata;
         this.sourceTable = sourceTable;
         this.primaryKey = primaryKey;
         this.indexScore = indexScore;
     }
 
-    protected PrimaryKeyWithSortKey(IndexContext context, SSTableId sourceTable, PrimaryKey primaryKey, float indexScore)
+    public PrimaryKeyWithScore(ColumnMetadata columnMetadata, SSTableId sourceTable, PrimaryKey primaryKey, float indexScore)
     {
-        this.context = context;
+        this.columnMetadata = columnMetadata;
         this.sourceTable = sourceTable;
         this.primaryKey = primaryKey;
         this.indexScore = indexScore;
@@ -68,15 +61,16 @@ public abstract class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithSc
         return primaryKey;
     }
 
-    public boolean isIndexDataValid(Row row, int nowInSecs)
+    public boolean isIndexDataValid(Row row, long nowInSecs)
     {
-        assert context.getDefinition().isRegular() : "Only regular columns are supported, got " + context.getDefinition();
-        var cell = row.getCell(context.getDefinition());
+        assert columnMetadata.isRegular() : "Only regular columns are supported, got " + columnMetadata;
+        var cell = row.getCell(columnMetadata);
         if (!cell.isLive(nowInSecs))
             return false;
         assert cell instanceof CellWithSourceTable : "Expected CellWithSource, got " + cell.getClass();
-        return sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable())
-               && isIndexDataEqualToLiveData(cell.buffer());
+        boolean x = sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable());
+        System.out.println("isIndexDataValid: " + x + " " + sourceTable + " " + ((CellWithSourceTable<?>) cell).sourceTable());
+        return x;
     }
 
     @Override

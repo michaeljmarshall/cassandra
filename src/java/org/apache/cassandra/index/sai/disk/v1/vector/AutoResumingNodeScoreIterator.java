@@ -19,13 +19,15 @@
 package org.apache.cassandra.index.sai.disk.v1.vector;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.function.IntConsumer;
 
 import io.github.jbellis.jvector.graph.GraphSearcher;
+import io.github.jbellis.jvector.graph.NeighborSimilarity;
 import io.github.jbellis.jvector.graph.SearchResult;
-import org.apache.cassandra.index.sai.QueryContext;
-import org.apache.cassandra.index.sai.metrics.ColumnQueryMetrics;
+import io.github.jbellis.jvector.util.Bits;
+import io.github.jbellis.jvector.util.GrowableBitSet;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.AbstractIterator;
 
@@ -37,52 +39,50 @@ import static java.lang.Math.max;
  */
 public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult.NodeScore>
 {
-    private final GraphSearcher searcher;
-    private final GraphSearcherAccessManager accessManager;
-    private final int limit;
-    private final int rerankK;
+    private final GraphSearcher<float[]> searcher;
+    private final NeighborSimilarity.ScoreFunction scoreFunction;
+    private final NeighborSimilarity.ReRanker<float[]> reRanker;
+    private final int topK;
+    private final Bits acceptBits;
     private final boolean inMemory;
     private final String source;
-    private final QueryContext context;
-    private final ColumnQueryMetrics.VectorIndexMetrics columnQueryMetrics;
     private final IntConsumer nodesVisitedConsumer;
-    private Iterator<SearchResult.NodeScore> nodeScores;
+    private Iterator<SearchResult.NodeScore> nodeScores = Collections.emptyIterator();
     private int cumulativeNodesVisited;
+
+    // Defer initialization since it is only needed if we need to resume search
+    private SkipVisitedBits visited = null;
+    private SearchResult.NodeScore[] previousResult = null;
 
     /**
      * Create a new {@link AutoResumingNodeScoreIterator} that iterates over the provided {@link SearchResult}.
      * If the {@link SearchResult} is consumed, it retrieves the next {@link SearchResult} until the search returns
      * no more results.
-     * @param searcher the {@link GraphSearcher} to use to resume search.
-     * @param result the first {@link SearchResult} to iterate over
-     * @param context the {@link QueryContext} to use to record metrics
-     * @param columnQueryMetrics object to record metrics
+     * @param searcher the {@link GraphSearcher} to use to search and resume search.
+//     * @param columnQueryMetrics object to record metrics
      * @param nodesVisitedConsumer a consumer that accepts the total number of nodes visited
-     * @param limit the limit to pass to the {@link GraphSearcher} when resuming search
-     * @param rerankK the rerankK to pass to the {@link GraphSearcher} when resuming search
+//     * @param limit the limit to pass to the {@link GraphSearcher} when resuming search
+//     * @param rerankK the rerankK to pass to the {@link GraphSearcher} when resuming search
      * @param inMemory whether the graph is in memory or on disk (used for trace logging)
      * @param source the source of the search (used for trace logging)
      */
-    public AutoResumingNodeScoreIterator(GraphSearcher searcher,
-                                         GraphSearcherAccessManager accessManager,
-                                         SearchResult result,
-                                         QueryContext context,
-                                         ColumnQueryMetrics.VectorIndexMetrics columnQueryMetrics,
+    public AutoResumingNodeScoreIterator(GraphSearcher<float[]> searcher,
+                                         NeighborSimilarity.ScoreFunction scoreFunction,
+                                         NeighborSimilarity.ReRanker<float[]> reRanker,
+                                         int topK,
+                                         Bits acceptBits,
                                          IntConsumer nodesVisitedConsumer,
-                                         int limit,
-                                         int rerankK,
                                          boolean inMemory,
                                          String source)
     {
         this.searcher = searcher;
-        this.accessManager = accessManager;
-        this.nodeScores = Arrays.stream(result.getNodes()).iterator();
-        this.context = context;
-        this.columnQueryMetrics = columnQueryMetrics;
+        this.scoreFunction = scoreFunction;
+        this.reRanker = reRanker;
+        this.topK = topK;
+        this.acceptBits = acceptBits;
+
         this.cumulativeNodesVisited = 0;
         this.nodesVisitedConsumer = nodesVisitedConsumer;
-        this.limit = max(1, limit / 2); // we shouldn't need as many results on resume
-        this.rerankK = rerankK;
         this.inMemory = inMemory;
         this.source = source;
     }
@@ -93,24 +93,30 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
         if (nodeScores.hasNext())
             return nodeScores.next();
 
-        long start = System.nanoTime();
+        // Exclude last result from previous search
+        if (previousResult != null)
+        {
+            if (visited == null)
+                visited = new SkipVisitedBits(acceptBits, previousResult.length);
+            visited.visited(previousResult);
+        }
+        Bits bits = visited == null ? acceptBits : visited;
+        // TODO limit or topK here?
+        SearchResult nextResult = searcher.search(scoreFunction, reRanker, topK, bits);
 
-        // Search deeper into the graph
-        var nextResult = searcher.resume(limit, rerankK);
-
-        // Record metrics
-        long elapsed = System.nanoTime() - start;
-        columnQueryMetrics.onSearchResult(nextResult, elapsed, true);
-        context.addAnnGraphSearchLatency(elapsed);
+        // Record metrics (we add here instead of overwriting because re-queries are expensive proportional to the
+        // number of visited nodes and even though we throw away some of those results, it helps us determine the
+        // right path for brute force vs. ANN)
         cumulativeNodesVisited += nextResult.getVisitedCount();
 
         if (Tracing.isTracing())
         {
-            String msg = inMemory ? "Memory based ANN resume for {}/{} visited {} nodes, reranked {} to return {} results from {}"
-                                  : "Disk based ANN resume for {}/{} visited {} nodes, reranked {} to return {} results from {}";
-            Tracing.trace(msg, limit, rerankK, nextResult.getVisitedCount(), nextResult.getRerankedCount(), nextResult.getNodes().length, source);
+            Tracing.trace("{} based ANN {} for topK {} visited {} nodes to return {} results from {}",
+                          inMemory ? "Memory" : "Disk", previousResult == null ? "initial" : "re-query",
+                          topK, nextResult.getVisitedCount(), nextResult.getNodes().length, source);
         }
 
+        previousResult = nextResult.getNodes();
         // If the next result is empty, we are done searching.
         nodeScores = Arrays.stream(nextResult.getNodes()).iterator();
         return nodeScores.hasNext() ? nodeScores.next() : endOfData();
@@ -120,6 +126,35 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
     public void close()
     {
         nodesVisitedConsumer.accept(cumulativeNodesVisited);
-        accessManager.release();
+    }
+
+    private static class SkipVisitedBits implements Bits
+    {
+        private final Bits acceptBits;
+        private final GrowableBitSet visited;
+
+        SkipVisitedBits(Bits acceptBits, int initialBits)
+        {
+            this.acceptBits = acceptBits;
+            this.visited = new GrowableBitSet(initialBits);
+        }
+
+        void visited(SearchResult.NodeScore[] nodes)
+        {
+            for (SearchResult.NodeScore nodeScore : nodes)
+                visited.set(nodeScore.node);
+        }
+
+        @Override
+        public boolean get(int i)
+        {
+            return acceptBits.get(i) && !visited.get(i);
+        }
+
+        @Override
+        public int length()
+        {
+            return acceptBits.length();
+        }
     }
 }

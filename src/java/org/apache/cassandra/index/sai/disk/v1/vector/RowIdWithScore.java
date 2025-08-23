@@ -18,44 +18,31 @@
 
 package org.apache.cassandra.index.sai.disk.v1.vector;
 
-import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.io.sstable.SSTableId;
+import org.apache.cassandra.schema.ColumnMetadata;
 
 /**
- * Represents a row id with additional metadata. The metadata is not a type parameter to prevent unnecessary boxing.
+ * Represents a row id with its computed score.
  */
-public abstract class RowIdWithScore
+public class RowIdWithScore
 {
     private final int segmentRowId;
     private final float score;
 
-    protected RowIdWithScore(int segmentRowId, float score)
+    public RowIdWithScore(int segmentRowId, float score)
     {
         this.segmentRowId = segmentRowId;
         this.score = score;
     }
 
-    public final int getSegmentRowId()
+    public PrimaryKeyWithScore buildPrimaryKeyWithScore(ColumnMetadata columnMetadata,
+                                                        SSTableId sstableId,
+                                                        PrimaryKeyMap primaryKeyMap,
+                                                        long segmentRowIdOffset)
     {
-        return segmentRowId;
+        PrimaryKey pk = primaryKeyMap.primaryKeyFromRowId(segmentRowIdOffset + segmentRowId);
+        return new PrimaryKeyWithScore(columnMetadata, sstableId, pk, score);
     }
-
-    public PrimaryKeyWithScore buildPrimaryKeyWithScore(IndexContext indexContext,
-                                                            SSTableId<?> sstableId,
-                                                            PrimaryKeyMap primaryKeyMap,
-                                                            long segmentRowIdOffset)
-    {
-        var pk = primaryKeyMap.primaryKeyFromRowId(segmentRowIdOffset + segmentRowId);
-        return wrapPrimaryKey(indexContext, sstableId, pk);
-    }
-
-    /**
-     * Wrap the provided primary key with the stored metadata.
-     * @param indexContext the index context
-     * @param sstableId the sstable id
-     * @param primaryKey the primary key
-     * @return the wrapped primary key with its associated metadata
-     */
-    protected abstract PrimaryKeyWithScore wrapPrimaryKey(IndexContext indexContext, SSTableId<?> sstableId, PrimaryKey primaryKey);
 }

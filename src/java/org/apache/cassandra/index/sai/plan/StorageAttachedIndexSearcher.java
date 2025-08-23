@@ -30,7 +30,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -38,6 +37,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import io.netty.util.concurrent.FastThreadLocal;
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringBound;
 import org.apache.cassandra.db.ClusteringComparator;
@@ -53,13 +53,9 @@ import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexSliceFilter;
 import org.apache.cassandra.db.filter.RowFilter;
-import org.apache.cassandra.db.marshal.FloatType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.AbstractUnfilteredRowIterator;
-import org.apache.cassandra.db.rows.BTreeRow;
-import org.apache.cassandra.db.rows.BufferCell;
-import org.apache.cassandra.db.rows.ColumnData;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.rows.Unfiltered;
@@ -69,19 +65,19 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.RequestTimeoutException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.sai.QueryContext;
+import org.apache.cassandra.index.sai.StorageAttachedIndex;
+import org.apache.cassandra.index.sai.disk.SSTableIndex;
 import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.metrics.TableQueryMetrics;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeUtil;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.btree.BTree;
 
 public class StorageAttachedIndexSearcher implements Index.Searcher
 {
@@ -139,11 +135,39 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             return new ResultRetriever(executionController, false);
         else
         {
-            // todo get the right iterator
-            KeyRangeIterator iterator = Operation.buildIterator(queryController);
-            ScoreOrderedResultRetriever result = new ScoreOrderedResultRetriever();
-            return (UnfilteredPartitionIterator) new VectorTopKProcessor(command).filter(result);
+            // Need a consistent view of the memtables/sstables and their associated index, so we get the view now
+            // and propagate it as needed.
+            QueryViewBuilder.QueryView queryView = buildAnnQueryView();
+            try
+            {
+                ScoreOrderedResultRetriever result = new ScoreOrderedResultRetriever(queryController, executionController, queryContext, queryView, command.limits().count());
+                return (UnfilteredPartitionIterator) new VectorTopKProcessor(command).takeTopKThenSortByPrimaryKey(result);
+            }
+            finally
+            {
+                queryView.referencedIndexes.forEach(SSTableIndex::releaseQuietly);
+            }
         }
+    }
+
+    private QueryViewBuilder.QueryView buildAnnQueryView()
+    {
+        RowFilter.Expression annExpression = null;
+        for (RowFilter.Expression expression : queryController.indexFilter().getExpressions())
+        {
+            if (expression.operator() == Operator.ANN)
+            {
+                if (annExpression != null)
+                    throw new IllegalStateException("Multiple ANN expressions in a single query are not supported");
+                annExpression = expression;
+            }
+        }
+        if (annExpression == null)
+            throw new IllegalStateException("No ANN expression found in query");
+
+        StorageAttachedIndex index = queryController.indexFor(annExpression);
+        Expression planExpression = Expression.create(index).add(Operator.ANN, annExpression.getIndexValue().duplicate());
+        return new QueryViewBuilder(Collections.singleton(planExpression), queryController.mergeRange()).build();
     }
 
     private class ResultRetriever extends AbstractIterator<UnfilteredRowIterator> implements UnfilteredPartitionIterator
@@ -464,106 +488,13 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
                 queryContext.partitionsRead++;
                 queryContext.checkpoint();
 
-                UnfilteredRowIterator filtered = filterPartition(keys, partition, filterTree);
+                UnfilteredRowIterator filtered = filterPartition(partition, filterTree, queryContext);
 
                 // Note that we record the duration of the read after post-filtering, which actually 
                 // materializes the rows from disk.
                 tableQueryMetrics.postFilteringReadLatency.update(Clock.Global.nanoTime() - startTimeNanos, TimeUnit.NANOSECONDS);
 
                 return filtered;
-            }
-        }
-
-        private UnfilteredRowIterator filterPartition(List<PrimaryKey> keys, UnfilteredRowIterator partition, FilterTree tree)
-        {
-            Row staticRow = partition.staticRow();
-            DecoratedKey partitionKey = partition.partitionKey();
-            List<Unfiltered> matches = new ArrayList<>();
-            boolean hasMatch = false;
-            Set<PrimaryKey> keysToShadow = topK ? new HashSet<>(keys) : Collections.emptySet();
-
-            // todo static keys??
-            while (partition.hasNext())
-            {
-                Unfiltered unfiltered = partition.next();
-
-                if (unfiltered.isRow())
-                {
-                    queryContext.rowsFiltered++;
-
-                    if (tree.isSatisfiedBy(partitionKey, (Row) unfiltered, staticRow))
-                    {
-                        matches.add(unfiltered);
-                        hasMatch = true;
-
-                        if (topK)
-                        {
-                            PrimaryKey shadowed = keyFactory.hasClusteringColumns()
-                                                  ? keyFactory.create(partitionKey, ((Row) unfiltered).clustering())
-                                                  : keyFactory.create(partitionKey);
-                            keysToShadow.remove(shadowed);
-                        }
-                    }
-                }
-            }
-
-            // If any non-static rows match the filter, there should be no need to shadow the static primary key:
-            if (topK && hasMatch && keyFactory.hasClusteringColumns())
-                keysToShadow.remove(keyFactory.create(partitionKey, Clustering.STATIC_CLUSTERING));
-
-            // We may not have any non-static row data to filter...
-            if (!hasMatch)
-            {
-                queryContext.rowsFiltered++;
-
-                if (tree.isSatisfiedBy(partitionKey, staticRow, staticRow))
-                {
-                    hasMatch = true;
-
-                    if (topK)
-                        keysToShadow.clear();
-                }
-            }
-
-            if (topK && !keysToShadow.isEmpty())
-            {
-                // Record primary keys shadowed by expired TTLs, row tombstones, or range tombstones:
-                queryContext.vectorContext().recordShadowedPrimaryKeys(keysToShadow);
-            }
-
-            if (!hasMatch)
-            {
-                // If there are no matches, return an empty partition. If reconciliation is required at the
-                // coordinator, replica filtering protection may make a second round trip to complete its view
-                // of the partition.
-                return null;
-            }
-
-            // Return all matches found, along with the static row... 
-            return new PartitionIterator(partition, staticRow, matches.iterator());
-        }
-
-        private class PartitionIterator extends AbstractUnfilteredRowIterator
-        {
-            private final Iterator<Unfiltered> rows;
-
-            public PartitionIterator(UnfilteredRowIterator partition, Row staticRow, Iterator<Unfiltered> rows)
-            {
-                super(partition.metadata(),
-                      partition.partitionKey(),
-                      partition.partitionLevelDeletion(),
-                      partition.columns(),
-                      staticRow,
-                      partition.isReverseOrder(),
-                      partition.stats());
-
-                this.rows = rows;
-            }
-
-            @Override
-            protected Unfiltered computeNext()
-            {
-                return rows.hasNext() ? rows.next() : endOfData();
             }
         }
 
@@ -578,6 +509,77 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         {
             FileUtils.closeQuietly(resultKeyIterator);
             if (tableQueryMetrics != null) tableQueryMetrics.record(queryContext);
+        }
+    }
+
+    private static UnfilteredRowIterator filterPartition(UnfilteredRowIterator partition, FilterTree tree, QueryContext context)
+    {
+        Row staticRow = partition.staticRow();
+        DecoratedKey partitionKey = partition.partitionKey();
+        List<Unfiltered> matches = new ArrayList<>();
+        boolean hasMatch = false;
+
+        // todo static keys??
+        while (partition.hasNext())
+        {
+            Unfiltered unfiltered = partition.next();
+
+            if (unfiltered.isRow())
+            {
+                context.rowsFiltered++;
+
+                if (tree.isSatisfiedBy(partitionKey, (Row) unfiltered, staticRow))
+                {
+                    matches.add(unfiltered);
+                    hasMatch = true;
+                }
+            }
+        }
+
+        // We may not have any non-static row data to filter...
+        if (!hasMatch)
+        {
+            context.rowsFiltered++;
+
+            if (tree.isSatisfiedBy(partitionKey, staticRow, staticRow))
+            {
+                hasMatch = true;
+            }
+        }
+
+        if (!hasMatch)
+        {
+            // If there are no matches, return an empty partition. If reconciliation is required at the
+            // coordinator, replica filtering protection may make a second round trip to complete its view
+            // of the partition.
+            return null;
+        }
+
+        // Return all matches found, along with the static row...
+        return new SinglePartitionIterator(partition, staticRow, matches.iterator());
+    }
+
+    private static class SinglePartitionIterator extends AbstractUnfilteredRowIterator
+    {
+        private final Iterator<Unfiltered> rows;
+
+        public SinglePartitionIterator(UnfilteredRowIterator partition, Row staticRow, Iterator<Unfiltered> rows)
+        {
+            super(partition.metadata(),
+                  partition.partitionKey(),
+                  partition.partitionLevelDeletion(),
+                  partition.columns(),
+                  staticRow,
+                  partition.isReverseOrder(),
+                  partition.stats());
+
+            this.rows = rows;
+        }
+
+        @Override
+        protected Unfiltered computeNext()
+        {
+            return rows.hasNext() ? rows.next() : endOfData();
         }
     }
 
@@ -612,20 +614,20 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         private final int softLimit;
         private int returnedRowCount = 0;
 
-        private ScoreOrderedResultRetriever(CloseableIterator<PrimaryKeyWithScore> scoredPrimaryKeyIterator,
-                                            FilterTree filterTree,
-                                            QueryController controller,
+        private ScoreOrderedResultRetriever(QueryController controller,
                                             ReadExecutionController executionController,
                                             QueryContext queryContext,
+                                            QueryViewBuilder.QueryView queryView,
                                             int limit)
         {
-            IndexContext context = controller.getOrderer().context;
-            this.view = controller.getQueryView(context).viewFragment;
+            assert queryView.view.size() == 1;
+            QueryViewBuilder.QueryExpressionView queryExpressionView = queryView.view.stream().findFirst().get();
+            this.view = queryExpressionView.viewFragment;
             this.keyRanges = controller.dataRanges().stream().map(DataRange::keyRange).collect(Collectors.toList());
             this.coversFullRing = keyRanges.size() == 1 && RangeUtil.coversFullRing(keyRanges.get(0));
 
-            this.scoredPrimaryKeyIterator = scoredPrimaryKeyIterator;
-            this.filterTree = filterTree;
+            this.scoredPrimaryKeyIterator = Operation.buildIteratorForOrder(controller, queryExpressionView);
+            this.filterTree = Operation.buildFilter(controller, controller.usesStrictFiltering());
             this.controller = controller;
             this.executionController = executionController;
             this.queryContext = queryContext;
@@ -728,7 +730,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             while (scoredPrimaryKeyIterator.hasNext())
             {
                 var key = scoredPrimaryKeyIterator.next();
-                if (isInRange(key.primaryKey().partitionKey()) && controller.selects(key))
+                if (isInRange(key.primaryKey().partitionKey()) && !controller.doesNotSelect(key.primaryKey()))
                     return key;
             }
             return null;
@@ -758,10 +760,10 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
 
             try (UnfilteredRowIterator partition = controller.queryStorage(pk, view, executionController))
             {
-                queryContext.addPartitionsRead(1);
+                queryContext.partitionsRead++;
                 queryContext.checkpoint();
                 var staticRow = partition.staticRow();
-                UnfilteredRowIterator clusters = applyIndexFilter(partition, filterTree, queryContext);
+                UnfilteredRowIterator clusters = filterPartition(partition, filterTree, queryContext);
 
                 if (clusters == null || !clusters.hasNext())
                 {
@@ -789,7 +791,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
                         }
                     }
                 }
-                return isRowValid ? new PrimaryKeyIterator(partition, staticRow, row, sourceKeys, syntheticScoreColumn)
+                return isRowValid ? new PrimaryKeyIterator(partition, staticRow, row)
                                   : null;
             }
         }
@@ -803,7 +805,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         public void close()
         {
             FileUtils.closeQuietly(scoredPrimaryKeyIterator);
-            controller.finish();
         }
 
         public static class PrimaryKeyIterator extends AbstractUnfilteredRowIterator
@@ -811,7 +812,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             private boolean consumed = false;
             private final Unfiltered row;
 
-            public PrimaryKeyIterator(UnfilteredRowIterator partition, Row staticRow, Unfiltered content, List<PrimaryKeyWithScore> primaryKeysWithScore, ColumnMetadata syntheticScoreColumn)
+            public PrimaryKeyIterator(UnfilteredRowIterator partition, Row staticRow, Unfiltered content)
             {
                 super(partition.metadata(),
                       partition.partitionKey(),
@@ -821,39 +822,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
                       partition.isReverseOrder(),
                       partition.stats());
 
-                assert !primaryKeysWithScore.isEmpty();
-                var isScoredRow = primaryKeysWithScore.get(0) instanceof PrimaryKeyWithScore;
-                if (!content.isRow() || !isScoredRow)
-                {
-                    this.row = content;
-                    return;
-                }
-
-
-                if (syntheticScoreColumn == null)
-                {
-                    this.row = content;
-                    return;
-                }
-
-                // Clone the original Row
-                Row originalRow = (Row) content;
-                ArrayList<ColumnData> columnData = new ArrayList<>(originalRow.columnCount() + 1);
-                columnData.addAll(originalRow.columnData());
-
-                // inject +score as a new column
-                var pkWithScore = (PrimaryKeyWithScore) primaryKeysWithScore.get(0);
-                columnData.add(BufferCell.live(syntheticScoreColumn,
-                                               FBUtilities.nowInSeconds(),
-                                               FloatType.instance.decompose(pkWithScore.indexScore)));
-
-                this.row = BTreeRow.create(originalRow.clustering(),
-                                           originalRow.primaryKeyLivenessInfo(),
-                                           originalRow.deletion(),
-                                           BTree.builder(ColumnData.comparator)
-                                                .auto(true)
-                                                .addAll(columnData)
-                                                .build());
+                this.row = content;
             }
 
             @Override
@@ -866,7 +835,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             }
         }
     }
-
 
     /**
      * Used by {@link StorageAttachedIndexSearcher#filterReplicaFilteringProtection} to filter rows for columns that

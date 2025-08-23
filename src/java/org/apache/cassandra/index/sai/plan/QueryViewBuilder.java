@@ -25,7 +25,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.disk.SSTableIndex;
 import org.apache.cassandra.index.sai.memory.MemtableIndex;
@@ -57,12 +59,19 @@ public class QueryViewBuilder
         public final Expression expression;
         public final Collection<MemtableIndex> memtableIndexes;
         public final Collection<SSTableIndex> sstableIndexes;
+        public final ColumnFamilyStore.ViewFragment viewFragment;
 
         public QueryExpressionView(Expression expression, Collection<MemtableIndex> memtableIndexes, Collection<SSTableIndex> sstableIndexes)
         {
             this.expression = expression;
             this.memtableIndexes = memtableIndexes;
             this.sstableIndexes = sstableIndexes;
+
+            // Because the SSTableIndex holds a reference to the SSTableReader, we know the sstable is still accessible
+            // so it is safe to build a view fragment.
+            List<Memtable> memtables = memtableIndexes.stream().map(MemtableIndex::getMemtable).collect(Collectors.toList());
+            List<SSTableReader> sstableReaders = sstableIndexes.stream().map(SSTableIndex::getSSTable).collect(Collectors.toList());
+            this.viewFragment = new ColumnFamilyStore.ViewFragment(sstableReaders, memtables);
         }
     }
 
@@ -78,7 +87,6 @@ public class QueryViewBuilder
         }
     }
 
-    // todo what to do with you...
     protected QueryView build()
     {
         Set<SSTableIndex> referencedIndexes = new HashSet<>();

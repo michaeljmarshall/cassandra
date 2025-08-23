@@ -18,8 +18,6 @@
 
 package org.apache.cassandra.index.sai.plan;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -50,6 +48,8 @@ import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.guardrails.Guardrails;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
+import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.rows.BaseRowIterator;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
@@ -61,21 +61,20 @@ import org.apache.cassandra.index.sai.VectorQueryContext;
 import org.apache.cassandra.index.sai.disk.IndexSearchResultIterator;
 import org.apache.cassandra.index.sai.disk.SSTableIndex;
 import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
-import org.apache.cassandra.index.sai.iterators.KeyRangeConcatIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIntersectionIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
-import org.apache.cassandra.index.sai.iterators.KeyRangeOrderingIterator;
 import org.apache.cassandra.index.sai.iterators.KeyRangeUnionIterator;
+import org.apache.cassandra.index.sai.memory.MemtableIndex;
+import org.apache.cassandra.index.sai.utils.MergePrimaryKeyWithScoreIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RowWithSourceTable;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.net.ParamType;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.InsertionOrderedNavigableSet;
 import org.apache.cassandra.utils.Throwables;
-
-import static org.apache.cassandra.config.CassandraRelevantProperties.SAI_VECTOR_SEARCH_ORDER_CHUNK_SIZE;
 
 public class QueryController
 {
@@ -89,11 +88,8 @@ public class QueryController
     private final PrimaryKey.Factory keyFactory;
     private final PrimaryKey firstPrimaryKey;
     private final PrimaryKey lastPrimaryKey;
-    private final int orderChunkSize;
 
     private final NavigableSet<Clustering<?>> nextClusterings;
-
-    private final Map<IndexContext, QueryViewBuilder.QueryView> queryViews = new HashMap<>();
 
     public QueryController(ColumnFamilyStore cfs,
                            ReadCommand command,
@@ -111,7 +107,6 @@ public class QueryController
         this.keyFactory = new PrimaryKey.Factory(cfs.getPartitioner(), cfs.getComparator());
         this.firstPrimaryKey = keyFactory.create(mergeRange.left.getToken());
         this.lastPrimaryKey = keyFactory.create(mergeRange.right.getToken());
-        this.orderChunkSize = SAI_VECTOR_SEARCH_ORDER_CHUNK_SIZE.getInt();
         this.nextClusterings = new InsertionOrderedNavigableSet<>(cfs.metadata().comparator);
     }
 
@@ -153,6 +148,11 @@ public class QueryController
         return ranges;
     }
 
+    public AbstractBounds<PartitionPosition> mergeRange()
+    {
+        return mergeRange;
+    }
+
     @Nullable
     public StorageAttachedIndex indexFor(RowFilter.Expression expression)
     {
@@ -192,13 +192,14 @@ public class QueryController
         if (key == null)
             throw new IllegalArgumentException("non-null key required");
 
+        // TODO how do we want to handle static rows?
         SinglePartitionReadCommand partition = SinglePartitionReadCommand.create(cfs.metadata(),
                                                                                  command.nowInSec(),
                                                                                  command.columnFilter(),
                                                                                  RowFilter.none(),
                                                                                  DataLimits.NONE,
-                                                                                 keys.get(0).partitionKey(),
-                                                                                 makeFilter(keys));
+                                                                                 key.partitionKey(),
+                                                                                 makeFilter(List.of(key)));
 
         // Class to transform the row to include its source table.
         Function<Object, Transformation<BaseRowIterator<?>>> rowTransformer = (Object sourceTable) -> new Transformation<>()
@@ -355,117 +356,86 @@ public class QueryController
     }
 
     // This is an ANN only query
-    public KeyRangeIterator getTopKRows(RowFilter.Expression expression)
+    public CloseableIterator<PrimaryKeyWithScore> getTopKRows(QueryViewBuilder.QueryExpressionView queryExpressionView)
     {
-        assert expression.operator() == Operator.ANN;
-        StorageAttachedIndex index = indexFor(expression);
-        assert index != null;
-        Expression planExpression = Expression.create(index).add(Operator.ANN, expression.getIndexValue().duplicate());
-
-        QueryViewBuilder.QueryView queryView = new QueryViewBuilder(Collections.singleton(planExpression), mergeRange).build();
-        Runnable onClose = () -> queryView.referencedIndexes.forEach(SSTableIndex::releaseQuietly);
-
+        assert queryExpressionView.expression.operator == Expression.IndexOperator.ANN;
+        List<CloseableIterator<PrimaryKeyWithScore>> intermediateResults = new ArrayList<>();
         try
         {
-            List<KeyRangeIterator> memtableResults = queryView.view
-                                                              .stream()
-                                                              .map(v -> v.memtableIndexes)
-                                                              .flatMap(Collection::stream)
-                                                              .map(idx -> idx.search(queryContext, planExpression, mergeRange))
-                                                              .collect(Collectors.toList());
-
-            List<KeyRangeIterator> sstableIntersections = queryView.view
-                                                                   .stream()
-                                                                   .map(this::createRowIdIterator)
-                                                                   .collect(Collectors.toList());
-
-            return IndexSearchResultIterator.build(sstableIntersections, memtableResults, queryView.referencedIndexes, queryContext, onClose);
+            for (MemtableIndex memtableIndex : queryExpressionView.memtableIndexes)
+                intermediateResults.add(memtableIndex.orderBy(queryContext, queryExpressionView.expression, mergeRange, queryContext.vectorContext().limit()));
+            for (SSTableIndex sstableIndex : queryExpressionView.sstableIndexes)
+                intermediateResults.addAll(sstableIndex.orderBy(queryExpressionView.expression, mergeRange, queryContext));
+            return new MergePrimaryKeyWithScoreIterator(intermediateResults);
         }
         catch (Throwable t)
         {
             // all sstable indexes in view have been referenced, need to clean up when exception is thrown
-            onClose.run();
-            throw t;
+            queryExpressionView.sstableIndexes.forEach(SSTableIndex::releaseQuietly);
+            intermediateResults.forEach(FileUtils::closeQuietly);
+            throw Throwables.cleaned(t);
         }
     }
 
     // This is a hybrid query. We apply all other predicates before ordering and limiting.
-    public KeyRangeIterator getTopKRows(KeyRangeIterator source, RowFilter.Expression expression)
+    public CloseableIterator<PrimaryKeyWithScore> getTopKRows(KeyRangeIterator source, QueryViewBuilder.QueryExpressionView queryExpressionView)
     {
-        return new KeyRangeOrderingIterator(source, orderChunkSize, list -> this.getTopKRows(list, expression));
+        var primaryKeys = materializeKeysAndCloseSource(source);
+        if (primaryKeys.isEmpty())
+            return CloseableIterator.empty();
+        return getTopKRows(primaryKeys, queryExpressionView);
     }
 
-    private CloseableIterator<PrimaryKeyWithScore> getTopKRows(List<PrimaryKey> rawSourceKeys, RowFilter.Expression expression)
+    private CloseableIterator<PrimaryKeyWithScore> getTopKRows(List<PrimaryKey> sourceKeys, QueryViewBuilder.QueryExpressionView queryExpressionView)
     {
         VectorQueryContext vectorQueryContext = queryContext.vectorContext();
-        // Filter out PKs now. Each PK is passed to every segment of the ANN index, so filtering shadowed keys
-        // eagerly can save some work when going from PK to row id for on disk segments.
-        // Since the result is shared with multiple streams, we use an unmodifiable list.
-        List<PrimaryKey> sourceKeys = rawSourceKeys.stream().filter(vectorQueryContext::shouldInclude).collect(Collectors.toList());
-        StorageAttachedIndex index = indexFor(expression);
-        assert index != null : "Cannot do ANN ordering on an unindexed column";
-        Expression planExpression = Expression.create(index);
-        planExpression.add(Operator.ANN, expression.getIndexValue().duplicate());
-
-        QueryViewBuilder.QueryView queryView = new QueryViewBuilder(Collections.singleton(planExpression), mergeRange).build();
-        Runnable onClose = () -> queryView.referencedIndexes.forEach(SSTableIndex::releaseQuietly);
-
+        List<CloseableIterator<PrimaryKeyWithScore>> intermediateResults = new ArrayList<>();
         try
         {
-            List<KeyRangeIterator> memtableResults = queryView.view
-                                                              .stream()
-                                                              .map(v -> v.memtableIndexes)
-                                                              .flatMap(Collection::stream)
-                                                              .map(idx -> idx.limitToTopResults(sourceKeys, planExpression, vectorQueryContext.limit()))
-                                                              .collect(Collectors.toList());
-
-            List<KeyRangeIterator> sstableIntersections = queryView.view
-                                                                   .stream()
-                                                                   .flatMap(pair -> pair.sstableIndexes.stream())
-                                                                   .map(idx -> {
-                                                                       try
-                                                                       {
-                                                                           return idx.orderResultsBy(queryContext, sourceKeys, planExpression);
-                                                                       }
-                                                                       catch (IOException e)
-                                                                       {
-                                                                           throw new UncheckedIOException(e);
-                                                                       }
-                                                                   })
-                                                                   .collect(Collectors.toList());
-
-            return IndexSearchResultIterator.build(sstableIntersections, memtableResults, queryView.referencedIndexes, queryContext, onClose);
+            for (MemtableIndex memtableIndex : queryExpressionView.memtableIndexes)
+                intermediateResults.add(memtableIndex.orderResultsBy(queryContext, sourceKeys, queryExpressionView.expression, vectorQueryContext.limit()));
+            for (SSTableIndex sstableIndex : queryExpressionView.sstableIndexes)
+                intermediateResults.addAll(sstableIndex.orderResultsBy(queryContext, sourceKeys, queryExpressionView.expression));
+            return new MergePrimaryKeyWithScoreIterator(intermediateResults);
         }
         catch (Throwable t)
         {
             // all sstable indexes in view have been referenced, need to clean up when exception is thrown
-            onClose.run();
-            throw t;
+            queryExpressionView.sstableIndexes.forEach(SSTableIndex::releaseQuietly);
+            intermediateResults.forEach(FileUtils::closeQuietly);
+            throw Throwables.cleaned(t);
         }
     }
 
     /**
-     * Create row id iterator from different indexes' on-disk searcher of the same sstable
+     * Materialize the keys from the given source iterator. If there is a meaningful {@link #mergeRange}, the keys
+     * are filtered to only include those within the range. Note: closes the source iterator.
+     * @param source The source iterator to fully consume by materializing its keys
+     * @return The list of materialized keys within the {@link #mergeRange}.
      */
-    private KeyRangeIterator createRowIdIterator(QueryViewBuilder.QueryExpressionView indexExpression)
+    private List<PrimaryKey> materializeKeysAndCloseSource(KeyRangeIterator source)
     {
-        List<KeyRangeIterator> subIterators = indexExpression.sstableIndexes
-                           .stream()
-                           .map(index ->
-                                {
-                                    try
-                                    {
-                                        List<KeyRangeIterator> iterators = index.search(indexExpression.expression, mergeRange, queryContext);
-                                        // concat the result from multiple segments for the same index
-                                        return KeyRangeConcatIterator.builder(iterators.size()).add(iterators).build();
-                                    }
-                                    catch (Throwable ex)
-                                    {
-                                        throw Throwables.cleaned(ex);
-                                    }
-                                }).collect(Collectors.toList());
+        try (source)
+        {
+            // Skip to the first key (which is really just a token) in the range if it is not the minimum token
+            if (!mergeRange.left.isMinimum())
+                source.skipTo(firstPrimaryKey);
 
-        return KeyRangeUnionIterator.build(subIterators);
+            if (!source.hasNext())
+                return List.of();
+
+            var maxToken = keyFactory.create(mergeRange.right.getToken());
+            var hasLimitingMaxToken = !maxToken.token().isMinimum() && maxToken.compareTo(source.getMaximum()) < 0;
+            List<PrimaryKey> primaryKeys = new ArrayList<>();
+            while (source.hasNext())
+            {
+                var next = source.next();
+                if (hasLimitingMaxToken && next.compareTo(maxToken) > 0)
+                    break;
+                primaryKeys.add(next);
+            }
+            return primaryKeys;
+        }
     }
 
     // Note: This method assumes that the selects method has already been called for the

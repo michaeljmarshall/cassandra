@@ -58,7 +58,7 @@ public class MemtableIndexManager
         // call to computeIfAbsent() if it's not. (see https://bugs.openjdk.java.net/browse/JDK-8161372)
         MemtableIndex target = (current != null)
                                ? current
-                               : liveMemtableIndexMap.computeIfAbsent(mt, memtable -> new MemtableIndex(index));
+                               : liveMemtableIndexMap.computeIfAbsent(mt, memtable -> new MemtableIndex(index, memtable));
 
         long start = Clock.Global.nanoTime();
 

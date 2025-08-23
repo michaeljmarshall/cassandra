@@ -49,8 +49,6 @@ public class Segment implements SegmentOrdering, Closeable
     private final Token.KeyBound minKeyBound;
     private final Token.KeyBound maxKeyBound;
 
-    // per sstable
-    final PrimaryKeyMap.Factory primaryKeyMapFactory;
     // per-segment
     public final SegmentMetadata metadata;
 
@@ -61,16 +59,14 @@ public class Segment implements SegmentOrdering, Closeable
         this.minKeyBound = metadata.minKey.token().minKeyBound();
         this.maxKeyBound = metadata.maxKey.token().maxKeyBound();
 
-        this.primaryKeyMapFactory = sstableContext.primaryKeyMapFactory;
         this.metadata = metadata;
 
-        this.index = IndexSegmentSearcher.open(primaryKeyMapFactory, indexFiles, metadata, index);
+        this.index = IndexSegmentSearcher.open(sstableContext, indexFiles, metadata, index);
     }
 
     @VisibleForTesting
     public Segment(Token minKey, Token maxKey)
     {
-        this.primaryKeyMapFactory = null;
         this.metadata = null;
         this.minKeyBound = minKey.minKeyBound();
         this.maxKeyBound = maxKey.maxKeyBound();
@@ -112,6 +108,20 @@ public class Segment implements SegmentOrdering, Closeable
     public KeyRangeIterator search(Expression expression, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
         return index.search(expression, keyRange, context);
+    }
+
+    /**
+     * Order the on-disk index synchronously and produce an iterator in score order
+     *
+     * @param orderer    to filter on disk index
+     * @param keyRange   key range specific in read command, used by ANN index
+     * @param context    to track per sstable cache and per query metrics
+     * @param limit      the num of rows to returned, used by ANN index
+     * @return an iterator of {@link PrimaryKeyWithScore} in score order
+     */
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    {
+        return index.orderBy(exp, keyRange, context);
     }
 
     @Override

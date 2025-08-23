@@ -20,14 +20,18 @@ package org.apache.cassandra.index.sai.utils;
 
 import java.nio.ByteBuffer;
 
+import javax.swing.*;
+
 import org.apache.cassandra.db.DeletionPurger;
 import org.apache.cassandra.db.Digest;
+import org.apache.cassandra.db.marshal.ByteType;
 import org.apache.cassandra.db.marshal.ValueAccessor;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.ColumnData;
 import org.apache.cassandra.db.rows.ComplexColumnData;
 import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.ByteBufferCloner;
 
 /**
@@ -36,12 +40,19 @@ import org.apache.cassandra.utils.memory.ByteBufferCloner;
  */
 public class CellWithSourceTable<T> extends Cell<T>
 {
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new CellWithSourceTable<>(null, null, null));
+
     private final Cell<T> cell;
     private final Object sourceTable;
 
     public CellWithSourceTable(Cell<T> cell, Object sourceTable)
     {
-        super(cell.column());
+        this(cell.column(), cell, sourceTable);
+    }
+
+    private CellWithSourceTable(ColumnMetadata column, Cell<T> cell, Object sourceTable)
+    {
+        super(column);
         this.cell = cell;
         this.sourceTable = sourceTable;
     }
@@ -154,6 +165,12 @@ public class CellWithSourceTable<T> extends Cell<T>
     }
 
     @Override
+    public long unsharedHeapSize()
+    {
+        return cell.unsharedHeapSize() + EMPTY_SIZE;
+    }
+
+    @Override
     public void validate()
     {
         cell.validate();
@@ -194,6 +211,19 @@ public class CellWithSourceTable<T> extends Cell<T>
     public Cell<?> purge(DeletionPurger purger, long nowInSec)
     {
         return wrapIfNew(cell.purge(purger, nowInSec));
+    }
+
+    @Override
+    public Cell<?> purgeDataOlderThan(long timestamp)
+    {
+        return wrapIfNew(cell.purgeDataOlderThan(timestamp));
+    }
+
+    @Override
+    protected int localDeletionTimeAsUnsignedInt()
+    {
+        // Cannot call cell's localDeletionTimeAsUnsignedInt() because it's protected.
+        throw new UnsupportedOperationException();
     }
 
     @Override

@@ -22,7 +22,6 @@ import org.apache.cassandra.cql3.UntypedResultSet;
 
 import org.junit.Test;
 
-import static org.apache.cassandra.config.CassandraRelevantProperties.SAI_VECTOR_SEARCH_ORDER_CHUNK_SIZE;
 import static org.apache.cassandra.index.sai.cql.VectorTypeTest.assertContainsInt;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -494,54 +493,5 @@ public class VectorUpdateDeleteTest extends VectorTester
         // Push memtable to sstable. we should get same result
         flush();
         assertRows(execute("SELECT pk FROM %s WHERE val1 = 'match me' AND val2 = 'match me' ORDER BY vec ANN OF [11,11] LIMIT 2"), row(1), row(2));
-    }
-
-    @Test
-    public void ensureVariableChunkSizeDoesNotLeadToIncorrectResults() throws Exception
-    {
-        // When adding the chunk size feature, there were issues related to leaked files.
-        // This setting only matters for hybrid queries
-        createTable(KEYSPACE, "CREATE TABLE %s (pk int primary key, str_val text, vec vector<float, 2>)");
-        createIndex("CREATE CUSTOM INDEX ON %s(vec) USING 'StorageAttachedIndex' WITH OPTIONS = { 'similarity_function' : 'euclidean' }");
-        createIndex("CREATE CUSTOM INDEX ON %s(str_val) USING 'StorageAttachedIndex'");
-
-        // Create many sstables to ensure chunk size matters
-        // Start at 1 to prevent indexing zero vector.
-        // Index every vector with A to match everything and because this test only makes sense for hybrid queries
-        for (int i = 1; i <= 100; i++)
-        {
-            execute("INSERT INTO %s (pk, str_val, vec) VALUES (?, ?, ?)", i, "A", vector((float) i, (float) i));
-            if (i % 10 == 0)
-                flush();
-            // Add some deletes in the next segment
-            if (i % 3 == 0)
-                execute("DELETE FROM %s WHERE pk = ?", i);
-        }
-
-        try
-        {
-            // We use a chunk size that is as low as possible (1) and goes up to the whole dataset (100).
-            // We also query for different LIMITs
-            for (int i = 1; i <= 100; i++)
-            {
-                SAI_VECTOR_SEARCH_ORDER_CHUNK_SIZE.setInt(i);
-                var results = execute("SELECT pk FROM %s WHERE str_val = 'A' ORDER BY vec ANN OF [1,1] LIMIT 1");
-                assertRows(results, row(1));
-                results = execute("SELECT pk FROM %s WHERE str_val = 'A' ORDER BY vec ANN OF [1,1] LIMIT 3");
-                // Note that we delete row 3
-                assertRows(results, row(1), row(2), row(4));
-                results = execute("SELECT pk FROM %s WHERE str_val = 'A' ORDER BY vec ANN OF [1,1] LIMIT 10");
-                // Note that we delete row 3, 6, 9, 12
-                assertRows(results, row(1), row(2), row(4), row(5),
-                           row(7), row(8), row(10), row(11), row(13), row(14));
-            }
-        }
-        finally
-        {
-            // Revert to prevent interference with other tests. Note that a decreased chunk size can impact
-            // whether we compute the topk with brute force because it determines how many vectors get sent to the
-            // vector index.
-            SAI_VECTOR_SEARCH_ORDER_CHUNK_SIZE.setInt(100000);
-        }
     }
 }
