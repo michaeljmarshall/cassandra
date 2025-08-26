@@ -473,6 +473,7 @@ public class VectorTypeTest extends VectorTester
         }
     }
 
+    // TODO create issue and likely block this kind of query since the competing ORDER BY logic does not work
     @Test
     public void clusteringKeyIndexTest()
     {
