@@ -66,7 +66,6 @@ public class WidePrimaryKeyMap extends SkinnyPrimaryKeyMap
         private final FileHandle clusteringKeyBlockOffsetsFile;
         private final FileHandle clustingingKeyBlocksFile;
         private final FileHandle partitionToSizeFile;
-        private final SSTableId sstableId;
 
         public Factory(IndexDescriptor indexDescriptor, SSTableReader sstable)
         {
@@ -84,7 +83,6 @@ public class WidePrimaryKeyMap extends SkinnyPrimaryKeyMap
                 NumericValuesMeta clusteringKeyBlockOffsetsMeta = new NumericValuesMeta(metadataSource.get(indexDescriptor.componentName(IndexComponent.CLUSTERING_KEY_BLOCK_OFFSETS)));
                 KeyLookupMeta clusteringKeyMeta = new KeyLookupMeta(metadataSource.get(indexDescriptor.componentName(IndexComponent.CLUSTERING_KEY_BLOCKS)));
                 this.clusteringKeyReader = new KeyLookup(clustingingKeyBlocksFile, clusteringKeyBlockOffsetsFile, clusteringKeyMeta, clusteringKeyBlockOffsetsMeta);
-                this.sstableId = sstable.descriptor.id;
             }
             catch (Throwable t)
             {
