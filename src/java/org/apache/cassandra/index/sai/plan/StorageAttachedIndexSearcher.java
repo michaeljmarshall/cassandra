@@ -683,7 +683,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
 
         /**
          * Fills the `groupedKeys` Map with the next `count` unique primary keys that are in the keys produced by calling
-         * {@link #nextSelectedKeyInRange()}. We map PrimaryKey to List<PrimaryKeyWithScore> because the same
+         * {@link #nextSelectedKeyInRange()}. We map PrimaryKey to a list of PrimaryKeyWithScore because the same
          * primary key can be in the result set multiple times, but with different source tables.
          * @param groupedKeys the map to fill
          * @param count the number of unique PrimaryKeys to consume from the iterator

@@ -38,7 +38,6 @@ import org.apache.cassandra.index.sai.disk.v1.segment.Segment;
 import org.apache.cassandra.index.sai.disk.v1.segment.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
-import org.apache.cassandra.index.sai.iterators.KeyRangeUnionIterator;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
