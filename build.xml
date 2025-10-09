@@ -43,9 +43,9 @@
         Builds with non-default JDKs are considered experimental and for development and testing purposes.
         When building, javac's source and target flags are set to the jdk used, so lower JDKs are not supported at runtime.
     -->
-    <property name="java.default" value="11" />
+    <property name="java.default" value="25" />
     <!-- Not sure whether we need 17 below, at least jvm options were added some time ago for 17 -->
-    <property name="java.supported" value="11,17,22" />
+    <property name="java.supported" value="11,17,22,25" />
 
     <!-- directory details -->
     <property name="basedir" value="."/>
@@ -329,6 +329,38 @@
         <equals arg1="${ant.java.version}" arg2="22"/>
     </condition>
 
+    <resources id="_jvm25_arg_items">
+        <string>-XX:+UnlockDiagnosticVMOptions</string>
+        <string>-Djdk.attach.allowAttachSelf=true</string>
+        <string>-XX:+UseG1GC</string>
+        <string>-XX:+ParallelRefProcEnabled</string>
+        <string>-XX:G1RSetUpdatingPauseTimePercent=5</string>
+        <string>-XX:MaxGCPauseMillis=100</string>
+        <string>-XX:+UseStringDeduplication</string>
+        <string>-XX:+AlwaysPreTouch</string>
+        <string>-XX:+UseNUMA</string>
+        <string>-XX:+UseTLAB</string>
+        <string>-XX:+ResizeTLAB</string>
+
+        <!-- Updated JDK 25 module exports (JEP 476 tightened encapsulation further) -->
+        <string>--add-exports java.base/jdk.internal.misc=ALL-UNNAMED</string>
+        <string>--add-exports java.base/jdk.internal.ref=ALL-UNNAMED</string>
+        <string>--add-exports java.base/sun.nio.ch=ALL-UNNAMED</string>
+        <string>--add-opens java.base/java.lang=ALL-UNNAMED</string>
+        <string>--add-opens java.base/java.lang.reflect=ALL-UNNAMED</string>
+        <string>--add-opens java.base/java.io=ALL-UNNAMED</string>
+        <string>--add-opens java.base/java.net=ALL-UNNAMED</string>
+        <string>--add-opens java.base/java.util=ALL-UNNAMED</string>
+        <string>--add-opens java.base/jdk.internal.loader=ALL-UNNAMED</string>
+        <string>--add-opens jdk.compiler/com.sun.tools.javac=ALL-UNNAMED</string>
+        <string>--add-opens jdk.management/com.sun.management.internal=ALL-UNNAMED</string>
+    </resources>
+
+    <pathconvert property="_jvm25_args_concat" refid="_jvm25_arg_items" pathsep=" "/>
+    <condition property="java-jvmargs" value="${_jvm25_args_concat}">
+        <equals arg1="${ant.java.version}" arg2="25"/>
+    </condition>
+
     <!--
       JVM arguments for tests.
 
@@ -369,10 +401,27 @@
         <equals arg1="${ant.java.version}" arg2="22"/>
     </condition>
 
+    <resources id="_jvm25_test_arg_items">
+        <string>-Djava.security.manager=allow</string>
+        <string>-Dio.netty.tryReflectionSetAccessible=true</string>
+        <string>--add-modules jdk.incubator.vector</string>
+    </resources>
+    <pathconvert property="_jvm25_test_arg_items_concat" refid="_jvm25_test_arg_items" pathsep=" "/>
+    <condition property="_std-test-jvmargs" value="${_jvm25_test_arg_items_concat}">
+        <equals arg1="${ant.java.version}" arg2="25"/>
+    </condition>
+
+
     <!-- needed to compile org.apache.cassandra.utils.JMXServerUtils -->
     <!-- needed to compile org.apache.cassandra.distributed.impl.Instance-->
     <!-- needed to compile org.apache.cassandra.utils.memory.BufferPool -->
-    <property name="jdk11plus-javac-exports" value="--add-exports java.rmi/sun.rmi.registry=ALL-UNNAMED --add-exports java.rmi/sun.rmi.transport.tcp=ALL-UNNAMED --add-exports java.base/jdk.internal.ref=ALL-UNNAMED --add-exports java.base/sun.nio.ch=ALL-UNNAMED"/>
+    <property name="jdk11plus-javac-exports"
+              value="--add-exports java.rmi/sun.rmi.registry=ALL-UNNAMED
+                 --add-exports java.rmi/sun.rmi.transport.tcp=ALL-UNNAMED
+                 --add-exports java.base/jdk.internal.ref=ALL-UNNAMED
+                 --add-exports java.base/sun.nio.ch=ALL-UNNAMED
+                 --add-opens java.base/jdk.internal.loader=ALL-UNNAMED
+                 --add-opens java.base/java.lang=ALL-UNNAMED"/>
 
     <!--
          Add all the dependencies.
@@ -1009,7 +1058,7 @@
         <copy todir="${build.classes.main}">
             <fileset dir="${build.src.resources}" />
         </copy>
-        <copy todir="${basedir}/conf" file="${build.classes.main}/META-INF/hotspot_compiler"/>
+        <copy todir="${basedir}/conf" file="${build.classes.main}/META-INF/hotspot_compiler" failonerror="false" quiet="true"/>
     </target>
 
     <!-- Stress build file -->
