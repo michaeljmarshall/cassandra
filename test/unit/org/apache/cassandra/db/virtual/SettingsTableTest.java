@@ -18,8 +18,12 @@
 
 package org.apache.cassandra.db.virtual;
 
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.ImmutableList;
@@ -30,16 +34,26 @@ import org.junit.Test;
 
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
+import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.Config;
+import org.apache.cassandra.config.Redacted;
+import org.apache.cassandra.config.DefaultLoader;
 import org.apache.cassandra.config.DurationSpec;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.InternodeEncryption;
 import org.apache.cassandra.config.ParameterizedClass;
+import org.apache.cassandra.config.TransparentDataEncryptionOptions;
 import org.apache.cassandra.cql3.CQLTester;
+import org.apache.cassandra.distributed.shared.WithProperties;
 import org.apache.cassandra.security.SSLFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.introspector.Property;
+
+import static java.util.stream.Collectors.toMap;
 
 public class SettingsTableTest extends CQLTester
 {
+    private static final Logger logger = LoggerFactory.getLogger(SettingsTableTest.class);
     private static final String KS_NAME = "vts";
 
     private Config config;
@@ -63,6 +77,16 @@ public class SettingsTableTest extends CQLTester
         config.commitlog_sync_group_window = new DurationSpec.IntMillisecondsBound(0);
         config.credentials_update_interval = null;
         config.data_file_directories = new String[] {"/my/data/directory", "/another/data/directory"};
+
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("keystore_password", "password");
+        params.put("key_password", "password");
+        params.put("keystore", "conf/.keystore");
+        config.transparent_data_encryption_options = new TransparentDataEncryptionOptions(false,
+                                                                                          "AES/CBC/PKCS5Padding",
+                                                                                          "alias",
+                                                                                          new ParameterizedClass("SomeClass",
+                                                                                                                 params));
         table = new SettingsTable(KS_NAME, config);
         VirtualKeyspaceRegistry.instance.register(new VirtualKeyspace(KS_NAME, ImmutableList.of(table)));
         disablePreparedReuseForTest();
@@ -152,19 +176,34 @@ public class SettingsTableTest extends CQLTester
         assertRowsNet(executeNet(q), new Object[] {"credentials_update_interval", null});
         q = "SELECT * FROM vts.settings WHERE name = 'credentials_update_interval_in_ms';";
         assertRowsNet(executeNet(q), new Object[] {"credentials_update_interval_in_ms", "-1"});
+
+        // test non matching auth related properties
+        q = "SELECT * FROM vts.settings WHERE name = 'authenticator';";
+        assertRowsNet(executeNet(q), new Object[] {"authenticator", null});
+        q = "SELECT * FROM vts.settings WHERE name = 'authorizer';";
+        assertRowsNet(executeNet(q), new Object[] {"authorizer", null});
+        q = "SELECT * FROM vts.settings WHERE name = 'network_authorizer';";
+        assertRowsNet(executeNet(q), new Object[] {"network_authorizer", null});
+        q= "select * from vts.settings where name = 'role_manager';";
+        assertRowsNet(executeNet(q), new Object[] {"role_manager", null});
     }
 
-    private void check(String setting, String expected) throws Throwable
+    private void check(String keyspaceTable, String setting, String expected)
     {
-        String q = "SELECT * FROM vts.settings WHERE name = '"+setting+'\'';
+        String q = "SELECT * FROM " + keyspaceTable + " WHERE name = '" + setting + '\'';
         try
         {
-            assertRowsNet(executeNet(q), new Object[] {setting, expected});
+            assertRowsNet(executeNet(q), new Object[]{ setting, expected });
         }
         catch (AssertionError e)
         {
             throw new AssertionError(e.getMessage() + " for query " + q);
         }
+    }
+
+    private void check(String setting, String expected)
+    {
+        check("vts.settings", setting, expected);
     }
 
     @Test
@@ -298,5 +337,75 @@ public class SettingsTableTest extends CQLTester
         check(pre + "iv_length", "16");
         config.transparent_data_encryption_options.iv_length = 7;
         check(pre + "iv_length", "7");
+    }
+
+    @Test
+    public void testRedaction()
+    {
+        assertValue("transparent_data_encryption_options.key_provider.parameters",
+                    String.format("{keystore_password=%s, keystore=conf/.keystore, key_password=%s}",
+                                  Redacted.REDACTED_STRING,
+                                  Redacted.REDACTED_STRING));
+
+        Set<Map.Entry<String, Property>> entries = new DefaultLoader().flatten(Config.class)
+                                                                      .entrySet()
+                                                                      .stream()
+                                                                      .filter(e -> e.getValue().getAnnotation(Redacted.class) != null)
+                                                                      .collect(toMap(Map.Entry::getKey, Map.Entry::getValue, (e, r) -> e, TreeMap::new))
+                                                                      .entrySet();
+
+        Assert.assertFalse(entries.isEmpty());
+
+        for (Map.Entry<String, Property> entry : entries)
+        {
+            logger.info("redacted {}", entry.getKey());
+            assertValue(entry.getKey(), entry.getValue().getAnnotation(Redacted.class).redactedValue());
+        }
+    }
+
+    private void assertValue(String settingName, String expectedValue)
+    {
+        List<Row> all = executeNet(String.format("SELECT * from vts.settings WHERE name = '%s'", settingName)).all();
+        Assert.assertFalse(all.isEmpty());
+        Row row = all.get(0);
+        String name = row.getString("name");
+        String value = row.getString("value");
+
+        Assert.assertEquals(settingName, name);
+        Assert.assertEquals(expectedValue, value);
+    }
+
+    @Test
+    public void testComplexSettingsFormatProperty()
+    {
+        Map<String, String> parameters = new HashMap<>();
+        parameters.put("seeds", "127.0.0.1:7000");
+        config.seed_provider = new ParameterizedClass("org.apache.cassandra.locator.SimpleSeedProvider", parameters);
+
+        // Test set property to true (collection as json)
+        try (WithProperties properties = new WithProperties().set(CassandraRelevantProperties.VIRTUAL_TABLE_COMPLEX_SETTINGS_FORMAT_JSON, "true"))
+        {
+            table = new SettingsTable("json_true", config);
+            VirtualKeyspaceRegistry.instance.register(new VirtualKeyspace("json_true", ImmutableList.of(table)));
+
+            check("json_true.settings", "data_file_directories", "[\"/my/data/directory\",\"/another/data/directory\"]");
+            check("json_true.settings", "seed_provider.parameters", "{\"seeds\":\"127.0.0.1:7000\"}");
+        }
+    }
+
+    @Test
+    public void testOldBehaviourForComplexSettingsFormatProperty()
+    {
+        Map<String, String> parameters = new HashMap<>();
+        parameters.put("seeds", "127.0.0.1:7000");
+        config.seed_provider = new ParameterizedClass("org.apache.cassandra.locator.SimpleSeedProvider", parameters);
+
+        // we are not setting property here to false, we expect it to be false by default
+
+        table = new SettingsTable("json_false", config);
+        VirtualKeyspaceRegistry.instance.register(new VirtualKeyspace("json_false", ImmutableList.of(table)));
+
+        check("json_false.settings", "data_file_directories", "[/my/data/directory, /another/data/directory]");
+        check("json_false.settings", "seed_provider.parameters", "{seeds=127.0.0.1:7000}");
     }
 }

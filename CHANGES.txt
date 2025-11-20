@@ -1,7 +1,26 @@
+5.0.7
+ * Adding missing configs in system_views.settings to be backward compatible (CASSANDRA-20863)
+ * Heap dump should not be generated on handled exceptions (CASSANDRA-20974)
+Merged from 4.1:
+ * ReadCommandController should close fast to avoid deadlock when building secondary index (CASSANDRA-19564)
+Merged from 4.0:
+ * Updated dtest-api to 0.0.18 and removed JMX-related classes that now live in the dtest-api (CASSANDRA-20884)
+
 5.0.6
+ * Fix range queries on early-open BTI files (CASSANDRA-20976)
+ * Avoid re-initializing underlying iterator in LazilyInitializedUnfilteredRowIterator after closing (CASSANDRA-20972)
+ * Flush SAI segment builder when current SSTable writer is switched (CASSANDRA-20752)
+ * Throw RTE instead of FSError when RTE is thrown from FileUtis.write in TOCComponent (CASSANDRA-20917)
+ * Upgrade jackson-dataformat-yaml to 2.19.2 and snakeyaml to 2.1 (CASSANDRA-18875)
+ * Represent complex settings as JSON on system_views.settings table (CASSANDRA-20827)
  * Expose StorageService.dropPreparedStatements via JMX (CASSANDRA-20870)
  * Sort SSTable TOC entries for determinism (CASSANDRA-20494)
+Merged from 4.1:
+ * Redact security-sensitive information in system_views.settings (CASSANDRA-20856)
 Merged from 4.0:
+ * Leveled Compaction doesn't validate maxBytesForLevel when the table is altered/created (CASSANDRA-20570)
+ * Fixed incorrect error message constant for keyspace name length validation (CASSANDRA-20915)
+ * Prevent too long table names not fitting file names (CASSANDRA-20389)
  * Update Jackson to 2.19.2 (CASSANDRA-20848)
  * Update commons-lang3 to 3.18.0 (CASSANDRA-20849)
  * Add NativeTransportMaxConcurrentConnectionsPerIp to StorageProxyMBean (CASSANDRA-20642)
