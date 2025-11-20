@@ -64,10 +64,20 @@ public class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithScore>
 
     public boolean isIndexDataValid(Row row, long nowInSecs)
     {
-        assert columnMetadata.isRegular() : "Only regular columns are supported, got " + columnMetadata;
-        Cell<?> cell = row.getCell(columnMetadata);
+        // If the indexed column is part of the primary key, we don't need this type of validation because we would have
+        // fetched the row using the indexed primary key, so they have to match.
+        if (columnMetadata.isPrimaryKeyColumn())
+            return true;
+
+        // If the row is static and the column is not static, or vice versa, the indexed value won't be present so we
+        // don't need to check if live data matches indexed data.
+        if (row.isStatic() != columnMetadata.isStatic())
+            return true;
+
+        var cell = row.getCell(columnMetadata);
         if (!cell.isLive(nowInSecs))
             return false;
+
         assert cell instanceof CellWithSourceTable : "Expected CellWithSource, got " + cell.getClass();
         return sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable());
     }
