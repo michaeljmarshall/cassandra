@@ -167,13 +167,6 @@ public class IndexViewManager
                 continue;
             }
 
-            if (sstableContext.indexDescriptor.isIndexEmpty(index.termType(), index.identifier()))
-            {
-                logger.debug(index.identifier().logMessage("No on-disk index was built for SSTable {} because the SSTable " +
-                                                           "had no indexable rows for the index."), sstableContext.descriptor());
-                continue;
-            }
-
             try
             {
                 if (validation != IndexValidation.NONE)
@@ -186,6 +179,13 @@ public class IndexViewManager
                 }
 
                 SSTableIndex ssTableIndex = sstableContext.newSSTableIndex(index);
+                if (ssTableIndex == null)
+                {
+                    logger.debug(index.identifier().logMessage("No on-disk index was built for SSTable {} because the SSTable " +
+                                                               "had no indexable rows for the index."), sstableContext.descriptor());
+                    continue;
+                }
+
                 logger.debug(index.identifier().logMessage("Successfully created index for SSTable {}."), sstableContext.descriptor());
 
                 // Try to add new index to the set, if set already has such index, we'll simply release and move on.
