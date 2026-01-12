@@ -175,7 +175,7 @@ public class V1SSTableIndex extends SSTableIndex
         return segmentIterators;
     }
 
-    public List<CloseableIterator<PrimaryKeyWithScore>> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderBy(Expression orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
         // Return a list to allow the caller to merge the results from multiple sstables into a single iterator.
         List<CloseableIterator<PrimaryKeyWithScore>> iterators = new ArrayList<>(segments.size());
@@ -183,18 +183,18 @@ public class V1SSTableIndex extends SSTableIndex
         {
             if (segment.intersects(keyRange))
             {
-                iterators.add(segment.orderBy(exp, keyRange, context));
+                iterators.add(segment.orderBy(orderer, keyRange, context));
             }
         }
         return iterators;
     }
 
-    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
     {
         // Return a list to allow the caller to merge the results from multiple sstables into a single iterator.
         List<CloseableIterator<PrimaryKeyWithScore>> iterators = new ArrayList<>(segments.size());
         for (Segment segment : segments)
-            iterators.add(segment.orderResultsBy(context, primaryKeys, expression));
+            iterators.add(segment.orderResultsBy(context, primaryKeys, orderer));
 
         return iterators;
     }

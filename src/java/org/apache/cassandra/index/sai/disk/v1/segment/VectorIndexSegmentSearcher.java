@@ -107,19 +107,19 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
         int limit = context.limit();
 
         if (logger.isTraceEnabled())
-            logger.trace(index.identifier().logMessage("Searching on expression '{}'..."), exp);
+            logger.trace(index.identifier().logMessage("Searching on expression '{}'..."), orderer);
 
-        if (exp.getIndexOperator() != Expression.IndexOperator.ANN)
-            throw new IllegalArgumentException(index.identifier().logMessage("Unsupported expression during ANN index query: " + exp));
+        if (orderer.getIndexOperator() != Expression.IndexOperator.ANN)
+            throw new IllegalArgumentException(index.identifier().logMessage("Unsupported expression during ANN index query: " + orderer));
 
         int topK = optimizeFor.topKFor(limit);
 
-        float[] queryVector = index.termType().decomposeVector(exp.lower().value.raw.duplicate());
+        float[] queryVector = index.termType().decomposeVector(orderer.lower().value.raw.duplicate());
         CloseableIterator<RowIdWithScore> result = searchInternal(keyRange, queryVector, limit, topK);
         return toScoreSortedIterator(result);
     }
@@ -285,7 +285,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
     {
         int limit = context.limit();
         // VSTODO would it be better to do a binary search to find the boundaries?
@@ -325,7 +325,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
             }
 
             int topK = optimizeFor.topKFor(limit);
-            float[] queryVector = index.termType().decomposeVector(expression.lower().value.raw.duplicate());
+            float[] queryVector = index.termType().decomposeVector(orderer.lower().value.raw.duplicate());
 
             if (shouldUseBruteForce(topK, limit, segmentOrdinalPairs.size()))
             {

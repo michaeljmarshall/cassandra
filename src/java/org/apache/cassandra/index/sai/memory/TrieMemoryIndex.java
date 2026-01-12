@@ -264,13 +264,13 @@ public class TrieMemoryIndex extends MemoryIndex
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderBy(QueryContext queryContext, Expression expression, AbstractBounds<PartitionPosition> keyRange)
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(QueryContext queryContext, Expression orderer, AbstractBounds<PartitionPosition> keyRange)
     {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression)
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer)
     {
         throw new UnsupportedOperationException();
     }

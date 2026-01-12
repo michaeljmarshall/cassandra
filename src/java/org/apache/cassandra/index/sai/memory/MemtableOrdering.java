@@ -34,22 +34,22 @@ import org.apache.cassandra.utils.CloseableIterator;
 public interface MemtableOrdering
 {
     /**
-     * Order the index based on the given expression.
+     * Order the index based on the given orderer (expression).
      *
      * @param queryContext - the query context
-     * @param expression   - the expression to order by
+     * @param orderer      - the expression to order by
      * @param keyRange     - the key range to search
      * @return an iterator over the results in score order.
      */
     CloseableIterator<PrimaryKeyWithScore> orderBy(QueryContext queryContext,
-                                                   Expression expression,
+                                                   Expression orderer,
                                                    AbstractBounds<PartitionPosition> keyRange);
 
     /**
-     * Order the given list of {@link PrimaryKey} results corresponding to the given expression.
+     * Order the given list of {@link PrimaryKey} results corresponding to the given orderer.
      * Returns an iterator over the results in score order.
      *
      * Assumes that the given  spans the same rows as the implementing index's segment.
      */
-    CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression);
+    CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer);
 }

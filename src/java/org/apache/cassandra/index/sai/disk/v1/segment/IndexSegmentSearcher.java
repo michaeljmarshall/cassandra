@@ -91,13 +91,13 @@ public abstract class IndexSegmentSearcher implements SegmentOrdering, Closeable
     /**
      * Order the rows by the given expression.
      *
-     * @param exp      the object containing the ordering logic
+     * @param orderer  the object containing the ordering logic
      * @param keyRange key range specific in read command, used by ANN index
      * @param context  to track per sstable cache and per query metrics
      *
      * @return an iterator of {@link PrimaryKeyWithScore} in descending score order
      */
-    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
         throw new UnsupportedOperationException();
     }

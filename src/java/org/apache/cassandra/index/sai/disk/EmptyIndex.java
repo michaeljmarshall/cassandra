@@ -96,13 +96,13 @@ public class EmptyIndex extends SSTableIndex
     }
 
     @Override
-    public List<CloseableIterator<PrimaryKeyWithScore>> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderBy(Expression orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
         return List.of();
     }
 
     @Override
-    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
     {
         return List.of();
     }

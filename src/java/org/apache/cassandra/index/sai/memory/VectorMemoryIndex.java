@@ -209,7 +209,7 @@ public class VectorMemoryIndex extends MemoryIndex
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression expression)
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression orderer)
     {
         if (minimumKey == null)
             // This case implies maximumKey is empty too.
@@ -229,7 +229,7 @@ public class VectorMemoryIndex extends MemoryIndex
         if (results.isEmpty())
             return CloseableIterator.empty();
 
-        ByteBuffer buffer = expression.lower().value.raw;
+        ByteBuffer buffer = orderer.lower().value.raw;
         float[] qv = index.termType().decomposeVector(buffer);
 
         if (results.size() <= maxBruteForceRows)

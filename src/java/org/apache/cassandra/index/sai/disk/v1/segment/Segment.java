@@ -112,20 +112,20 @@ public class Segment implements SegmentOrdering, Closeable
     /**
      * Order the on-disk index synchronously and produce an iterator in score order
      *
-     * @param exp        to search on disk index
+     * @param orderer    the expression to use when searching the on disk index
      * @param keyRange   key range specific in read command, used by ANN index
      * @param context    to track per sstable cache and per query metrics
      * @return an iterator of {@link PrimaryKeyWithScore} in score order
      */
-    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression exp, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderBy(Expression orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException
     {
-        return index.orderBy(exp, keyRange, context);
+        return index.orderBy(orderer, keyRange, context);
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression expression) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
     {
-        return index.orderResultsBy(context, primaryKeys, expression);
+        return index.orderResultsBy(context, primaryKeys, orderer);
     }
 
     @Override
