@@ -35,6 +35,7 @@ import org.apache.cassandra.index.sai.disk.v1.PerColumnIndexFiles;
 import org.apache.cassandra.index.sai.disk.v1.segment.SegmentMetadata;
 import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.io.util.FileHandle;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.CloseableIterator;
 
 public class DiskAnn implements AutoCloseable
@@ -94,27 +95,34 @@ public class DiskAnn implements AutoCloseable
     {
         OnHeapGraph.validateIndexable(queryVector, similarityFunction);
 
-        // TODO why isn't this getting closed?
         GraphIndex.View<float[]> view = graph.getView();
-        GraphSearcher<float[]> searcher = new GraphSearcher.Builder<>(view).build();
-        NeighborSimilarity.ScoreFunction scoreFunction;
-        NeighborSimilarity.ReRanker<float[]> reRanker;
-        if (compressedVectors == null)
+        try
         {
-            scoreFunction = (NeighborSimilarity.ExactScoreFunction)
-                            i -> similarityFunction.compare(queryVector, view.getVector(i));
-            reRanker = null;
+            GraphSearcher<float[]> searcher = new GraphSearcher.Builder<>(view).build();
+            NeighborSimilarity.ScoreFunction scoreFunction;
+            NeighborSimilarity.ReRanker<float[]> reRanker;
+            if (compressedVectors == null)
+            {
+                scoreFunction = (NeighborSimilarity.ExactScoreFunction)
+                                i -> similarityFunction.compare(queryVector, view.getVector(i));
+                reRanker = null;
+            }
+            else
+            {
+                scoreFunction = compressedVectors.approximateScoreFunctionFor(queryVector, similarityFunction);
+                reRanker = (i, map) -> similarityFunction.compare(queryVector, map.get(i));
+            }
+            Bits acceptedBits = ordinalsMap.ignoringDeleted(acceptBits);
+            // Search is done within the iterator to keep track of visited nodes. The resulting iterator
+            // searches until the graph is exhausted.
+            AutoResumingNodeScoreIterator nodeScoreIterator = new AutoResumingNodeScoreIterator(searcher, scoreFunction, reRanker, topK, acceptedBits, nodesVisitedConsumer, false, source, view);
+            return new NodeScoreToRowIdWithScoreIterator(nodeScoreIterator, ordinalsMap.getRowIdsView());
         }
-        else
+        catch (Exception e)
         {
-            scoreFunction = compressedVectors.approximateScoreFunctionFor(queryVector, similarityFunction);
-            reRanker = (i, map) -> similarityFunction.compare(queryVector, map.get(i));
+            FileUtils.closeQuietly(view);
+            throw new RuntimeException(e);
         }
-        Bits acceptedBits = ordinalsMap.ignoringDeleted(acceptBits);
-        // Search is done within the iterator to keep track of visited nodes. The resulting iterator
-        // searches until the graph is exhausted.
-        AutoResumingNodeScoreIterator nodeScoreIterator = new AutoResumingNodeScoreIterator(searcher, scoreFunction, reRanker, topK, acceptedBits, nodesVisitedConsumer, false, source);
-        return new NodeScoreToRowIdWithScoreIterator(nodeScoreIterator, ordinalsMap.getRowIdsView());
     }
 
     public NeighborSimilarity.ApproximateScoreFunction getApproximateScoreFunction(float[] queryVector)

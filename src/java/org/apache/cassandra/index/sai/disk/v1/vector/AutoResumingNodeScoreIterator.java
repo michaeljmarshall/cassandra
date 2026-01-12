@@ -23,11 +23,13 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.function.IntConsumer;
 
+import io.github.jbellis.jvector.graph.GraphIndex;
 import io.github.jbellis.jvector.graph.GraphSearcher;
 import io.github.jbellis.jvector.graph.NeighborSimilarity;
 import io.github.jbellis.jvector.graph.SearchResult;
 import io.github.jbellis.jvector.util.Bits;
 import io.github.jbellis.jvector.util.GrowableBitSet;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.AbstractIterator;
 
@@ -38,6 +40,7 @@ import org.apache.cassandra.utils.AbstractIterator;
 public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult.NodeScore>
 {
     private final GraphSearcher<float[]> searcher;
+    private final GraphIndex.View<float[]> view;
     private final NeighborSimilarity.ScoreFunction scoreFunction;
     private final NeighborSimilarity.ReRanker<float[]> reRanker;
     private final int topK;
@@ -60,6 +63,7 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
      * @param nodesVisitedConsumer a consumer that accepts the total number of nodes visited
      * @param inMemory whether the graph is in memory or on disk (used for trace logging)
      * @param source the source of the search (used for trace logging)
+     * @param view the view used to read from disk. It will be closed when the iterator is closed.
      */
     public AutoResumingNodeScoreIterator(GraphSearcher<float[]> searcher,
                                          NeighborSimilarity.ScoreFunction scoreFunction,
@@ -68,7 +72,8 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
                                          Bits acceptBits,
                                          IntConsumer nodesVisitedConsumer,
                                          boolean inMemory,
-                                         String source)
+                                         String source,
+                                         GraphIndex.View<float[]> view)
     {
         this.searcher = searcher;
         this.scoreFunction = scoreFunction;
@@ -80,6 +85,7 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
         this.nodesVisitedConsumer = nodesVisitedConsumer;
         this.inMemory = inMemory;
         this.source = source;
+        this.view = view;
     }
 
     @Override
@@ -120,6 +126,7 @@ public class AutoResumingNodeScoreIterator extends AbstractIterator<SearchResult
     public void close()
     {
         nodesVisitedConsumer.accept(cumulativeNodesVisited);
+        FileUtils.closeQuietly(view);
     }
 
     private static class SkipVisitedBits implements Bits

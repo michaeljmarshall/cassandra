@@ -297,9 +297,10 @@ public class OnHeapGraph<T>
 
         Bits bits = hasDeletions ? BitsUtil.bitsIgnoringDeleted(toAccept, postingsByOrdinal) : toAccept;
         GraphIndex<float[]> graph = builder.getGraph();
-        GraphSearcher<float[]> searcher = new GraphSearcher.Builder<>(graph.getView()).withConcurrentUpdates().build();
+        GraphIndex.View<float[]> view = graph.getView();
+        GraphSearcher<float[]> searcher = new GraphSearcher.Builder<>(view).withConcurrentUpdates().build();
         NeighborSimilarity.ExactScoreFunction scoreFunction = node2 -> vectorCompareFunction(queryVector, node2);
-        return new AutoResumingNodeScoreIterator(searcher, scoreFunction, null, limit, bits, v -> {}, true, source);
+        return new AutoResumingNodeScoreIterator(searcher, scoreFunction, null, limit, bits, v -> {}, true, source, view);
     }
 
     public SegmentMetadata.ComponentMetadataMap writeData(IndexDescriptor indexDescriptor, IndexIdentifier indexIdentifier, Function<T, Integer> postingTransformer) throws IOException
