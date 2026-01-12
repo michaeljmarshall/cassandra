@@ -75,7 +75,7 @@ public class QueryViewBuilder
         }
     }
 
-    public static class QueryView
+    public static class QueryView implements AutoCloseable
     {
         public final Collection<QueryExpressionView> view;
         public final Set<SSTableIndex> referencedIndexes;
@@ -84,6 +84,12 @@ public class QueryViewBuilder
         {
             this.view = view;
             this.referencedIndexes = referencedIndexes;
+        }
+
+        @Override
+        public void close()
+        {
+            referencedIndexes.forEach(SSTableIndex::releaseQuietly);
         }
     }
 

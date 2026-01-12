@@ -139,16 +139,13 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         {
             // Need a consistent view of the memtables/sstables and their associated index, so we get the view now
             // and propagate it as needed.
-            QueryViewBuilder.QueryView queryView = buildAnnQueryView();
-            try
+            try (QueryViewBuilder.QueryView queryView = buildAnnQueryView())
             {
                 queryController.maybeTriggerGuardrails(queryView);
                 ScoreOrderedResultRetriever result = new ScoreOrderedResultRetriever(queryController, executionController, queryContext, queryView, command.limits().count());
+                // takeTopKThenSortByPrimaryKey eagerly consumes up to k rows from the result because search must
+                // produce an iterator in PrimaryKey order.
                 return (UnfilteredPartitionIterator) new VectorTopKProcessor(command).takeTopKThenSortByPrimaryKey(result);
-            }
-            finally
-            {
-                queryView.referencedIndexes.forEach(SSTableIndex::releaseQuietly);
             }
         }
     }

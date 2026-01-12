@@ -236,10 +236,9 @@ public class QueryController
         expressions = expressions.stream().filter(e -> e.getIndexOperator() != Expression.IndexOperator.ANN).collect(Collectors.toList());
 
         QueryViewBuilder.QueryView queryView = new QueryViewBuilder(expressions, mergeRange).build();
-        Runnable onClose = () -> queryView.referencedIndexes.forEach(SSTableIndex::releaseQuietly);
         KeyRangeIterator.Builder builder = command.rowFilter().isStrict()
-                                           ? KeyRangeIntersectionIterator.builder(expressions.size(), onClose)
-                                           : KeyRangeUnionIterator.builder(expressions.size(), onClose);
+                                           ? KeyRangeIntersectionIterator.builder(expressions.size(), queryView::close)
+                                           : KeyRangeUnionIterator.builder(expressions.size(), queryView::close);
 
         try
         {
