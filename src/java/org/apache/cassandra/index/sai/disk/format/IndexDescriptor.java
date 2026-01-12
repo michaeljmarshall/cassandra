@@ -127,10 +127,9 @@ public class IndexDescriptor
 
     public SSTableIndex newSSTableIndex(SSTableContext sstableContext, StorageAttachedIndex index)
     {
-        if (isIndexEmpty(index.termType(), index.identifier()))
-            return index.termType().isVector() ? new EmptyIndex(sstableContext, index) : null;
-        else
-            return version.onDiskFormat().newSSTableIndex(sstableContext, index);
+        return isIndexEmpty(index.termType(), index.identifier())
+               ? new EmptyIndex(sstableContext, index)
+               : version.onDiskFormat().newSSTableIndex(sstableContext, index);
     }
 
     public PerSSTableIndexWriter newPerSSTableIndexWriter() throws IOException
