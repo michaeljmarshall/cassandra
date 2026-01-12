@@ -66,7 +66,6 @@ import org.apache.cassandra.exceptions.RequestTimeoutException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
-import org.apache.cassandra.index.sai.disk.SSTableIndex;
 import org.apache.cassandra.index.sai.disk.v1.vector.PrimaryKeyWithScore;
 import org.apache.cassandra.index.sai.metrics.TableQueryMetrics;
 import org.apache.cassandra.index.sai.iterators.KeyRangeIterator;
@@ -133,7 +132,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
     {
         if (!command.isTopK())
         {
-            return new ResultRetriever(executionController, false);
+            return new ResultRetriever(executionController);
         }
         else
         {
@@ -182,12 +181,11 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         private final FilterTree filterTree;
         private final ReadExecutionController executionController;
         private final PrimaryKey.Factory keyFactory;
-        private final boolean topK;
         private final int partitionRowBatchSize;
 
         private PrimaryKey lastKey;
 
-        private ResultRetriever(ReadExecutionController executionController, boolean topK)
+        private ResultRetriever(ReadExecutionController executionController)
         {
             this.keyRanges = queryController.dataRanges().iterator();
             this.firstDataRange = keyRanges.next();
@@ -198,7 +196,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             this.keyFactory = queryController.primaryKeyFactory();
             this.firstPrimaryKey = queryController.firstPrimaryKeyInRange();
             this.lastPrimaryKey = queryController.lastPrimaryKeyInRange();
-            this.topK = topK;
 
             // Ensure we don't fetch larger batches than the provided LIMIT to avoid fetching keys we won't use: 
             this.partitionRowBatchSize = Math.min(PARTITION_ROW_BATCH_SIZE, command.limits().count());
@@ -706,7 +703,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         /**
          * Determine if the key is in one of the queried key ranges. We do not iterate through results in
          * {@link PrimaryKey} order, so we have to check each range.
-         * @param key
+         * @param key the key to test
          * @return true if the key is in one of the queried key ranges
          */
         private boolean isInRange(DecoratedKey key)

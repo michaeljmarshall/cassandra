@@ -19,7 +19,6 @@
 package org.apache.cassandra.index.sai.disk.v1.vector;
 
 import org.apache.cassandra.db.memtable.Memtable;
-import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.index.sai.utils.CellWithSourceTable;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;

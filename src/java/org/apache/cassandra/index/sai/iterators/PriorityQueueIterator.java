@@ -30,6 +30,10 @@ public class PriorityQueueIterator<T> extends AbstractIterator<T>
 {
     private final PriorityQueue<T> queue;
 
+    /**
+     * Build a PriorityQueueIterator.
+     * @param queue a priority queue to be lazily consumed by the iterator
+     */
     public PriorityQueueIterator(PriorityQueue<T> queue)
     {
         this.queue = queue;
