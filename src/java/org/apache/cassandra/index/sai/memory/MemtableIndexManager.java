@@ -102,10 +102,9 @@ public class MemtableIndexManager
             return index(key, newRow, memtable);
         }
 
-        // TODO when do we hit this case? It isn't covered by tests.
+        // Updates should only be able to happen on memtables that were already created and that are still live.
         MemtableIndex target = liveMemtableIndexMap.get(memtable);
-        if (target == null)
-            return 0;
+        assert target != null : "Memtable for " + memtable.metadata().getTableName() + " not found";
 
         ByteBuffer oldValue = index.termType().valueOf(key, oldRow, FBUtilities.nowInSeconds());
         ByteBuffer newValue = index.termType().valueOf(key, newRow, FBUtilities.nowInSeconds());

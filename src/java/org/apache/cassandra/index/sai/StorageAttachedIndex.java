@@ -978,18 +978,6 @@ public class StorageAttachedIndex implements Index
         }
 
         @Override
-        public void begin()
-        {
-            // TODO what is the best way to do this? The current design unfortunately
-            // leads to an extra get for all inserts, but covers several edge cases.
-            // Would it be better to store a boolean and just do it on end()?
-
-            // Initialize the memtable index to ensure proper SAI views of the data when necessary, which is
-            // currently only necessary for vector indexes.
-            memtableIndexManager.maybeInitializeMemtableIndex(memtable);
-        }
-
-        @Override
         public void insertRow(Row row)
         {
             adjustMemtableSize(memtableIndexManager.index(key, row, memtable),
