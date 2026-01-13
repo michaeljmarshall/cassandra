@@ -619,7 +619,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         {
             assert queryView.view.size() == 1;
             QueryViewBuilder.QueryExpressionView queryExpressionView = queryView.view.stream().findFirst().get();
-            this.view = queryExpressionView.viewFragment;
+            this.view = queryExpressionView.computeViewFragment();
             this.keyRanges = controller.dataRanges().stream().map(DataRange::keyRange).collect(Collectors.toList());
             this.coversFullRing = keyRanges.size() == 1 && RangeUtil.coversFullRing(keyRanges.get(0));
 

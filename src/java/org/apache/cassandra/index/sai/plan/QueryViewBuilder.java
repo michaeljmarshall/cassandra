@@ -59,19 +59,21 @@ public class QueryViewBuilder
         public final Expression expression;
         public final Collection<MemtableIndex> memtableIndexes;
         public final Collection<SSTableIndex> sstableIndexes;
-        public final ColumnFamilyStore.ViewFragment viewFragment;
 
         public QueryExpressionView(Expression expression, Collection<MemtableIndex> memtableIndexes, Collection<SSTableIndex> sstableIndexes)
         {
             this.expression = expression;
             this.memtableIndexes = memtableIndexes;
             this.sstableIndexes = sstableIndexes;
+        }
 
+        public ColumnFamilyStore.ViewFragment computeViewFragment()
+        {
             // Because the SSTableIndex holds a reference to the SSTableReader, we know the sstable is still accessible
             // so it is safe to build a view fragment.
             List<Memtable> memtables = memtableIndexes.stream().map(MemtableIndex::getMemtable).collect(Collectors.toList());
             List<SSTableReader> sstableReaders = sstableIndexes.stream().map(SSTableIndex::getSSTable).collect(Collectors.toList());
-            this.viewFragment = new ColumnFamilyStore.ViewFragment(sstableReaders, memtables);
+            return new ColumnFamilyStore.ViewFragment(sstableReaders, memtables);
         }
     }
 
