@@ -54,16 +54,16 @@ import org.apache.cassandra.utils.memory.Cloner;
  * A Row wrapper that has a source object that gets added to cell as part of the getCell call. This can only be used
  * validly when all the cells share a common source object.
  */
-public class RowWithSourceTable implements Row
+public class RowWithSource implements Row
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new RowWithSourceTable(null, null));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new RowWithSource(null, null));
 
     private final Row row;
     private final Object source;
 
-    public RowWithSourceTable(Row row, Object source)
+    public RowWithSource(Row row, Object source)
     {
-        assert source instanceof Memtable || source instanceof SSTableId || source == null : "Expected Memtable or SSTableId, got " + source;
+        assert source instanceof Memtable || source instanceof SSTableId || (source == null && row == null) : "Expected Memtable or SSTableId, got " + source;
         this.row = row;
         this.source = source;
     }
@@ -152,7 +152,7 @@ public class RowWithSourceTable implements Row
         Cell<?> cell = row.getCell(c);
         if (cell == null)
             return null;
-        return new CellWithSourceTable<>(cell, source);
+        return new CellWithSource<>(cell, source);
     }
 
     @Override
@@ -359,15 +359,15 @@ public class RowWithSourceTable implements Row
         if (c == null)
             return null;
         if (c instanceof Cell<?>)
-            return new CellWithSourceTable<>((Cell<?>) c, source);
+            return new CellWithSource<>((Cell<?>) c, source);
         if (c instanceof ComplexColumnData)
-            return ((ComplexColumnData) c).transform(c1 -> new CellWithSourceTable<>(c1, source));
+            return ((ComplexColumnData) c).transform(c1 -> new CellWithSource<>(c1, source));
         throw new IllegalStateException("Unexpected ColumnData type: " + c.getClass().getName());
     }
 
     private Cell<?> wrapCell(Cell<?> c)
     {
-        return c != null ? new CellWithSourceTable<>(c, source) : null;
+        return c != null ? new CellWithSource<>(c, source) : null;
     }
 
     private Row maybeWrapRow(Row r)
@@ -376,7 +376,7 @@ public class RowWithSourceTable implements Row
             return null;
         if (r == this.row)
             return this;
-        return new RowWithSourceTable(r, source);
+        return new RowWithSource(r, source);
     }
 
     @Override

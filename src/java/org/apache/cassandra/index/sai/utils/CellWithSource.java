@@ -20,15 +20,15 @@ package org.apache.cassandra.index.sai.utils;
 
 import java.nio.ByteBuffer;
 
-import javax.swing.*;
-
 import org.apache.cassandra.db.DeletionPurger;
 import org.apache.cassandra.db.Digest;
 import org.apache.cassandra.db.marshal.ValueAccessor;
+import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.ColumnData;
 import org.apache.cassandra.db.rows.ComplexColumnData;
+import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.ByteBufferCloner;
@@ -37,28 +37,29 @@ import org.apache.cassandra.utils.memory.ByteBufferCloner;
  * A wrapped {@link Cell} that includes a reference to the cell's source table.
  * @param <T> the type of the cell's value
  */
-public class CellWithSourceTable<T> extends Cell<T>
+public class CellWithSource<T> extends Cell<T>
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new CellWithSourceTable<>(null, null, null));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new CellWithSource<>(null, null, null));
 
     private final Cell<T> cell;
-    private final Object sourceTable;
+    private final Object source;
 
-    public CellWithSourceTable(Cell<T> cell, Object sourceTable)
+    public CellWithSource(Cell<T> cell, Object source)
     {
-        this(cell.column(), cell, sourceTable);
+        this(cell.column(), cell, source);
+        assert source instanceof Memtable || source instanceof SSTableId : "Source has unexpected type: " + (source == null ? "null" : source.getClass());
     }
 
-    private CellWithSourceTable(ColumnMetadata column, Cell<T> cell, Object sourceTable)
+    private CellWithSource(ColumnMetadata column, Cell<T> cell, Object source)
     {
         super(column);
         this.cell = cell;
-        this.sourceTable = sourceTable;
+        this.source = source;
     }
 
     public Object sourceTable()
     {
-        return sourceTable;
+        return source;
     }
 
     @Override
@@ -239,6 +240,6 @@ public class CellWithSourceTable<T> extends Cell<T>
         // we can skip creating a new wrapper.
         if (maybeNewCell == this.cell)
             return this;
-        return new CellWithSourceTable<>(maybeNewCell, sourceTable);
+        return new CellWithSource<>(maybeNewCell, source);
     }
 }

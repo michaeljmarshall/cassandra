@@ -20,7 +20,7 @@ package org.apache.cassandra.index.sai.disk.v1.vector;
 
 import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.Row;
-import org.apache.cassandra.index.sai.utils.CellWithSourceTable;
+import org.apache.cassandra.index.sai.utils.CellWithSource;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.schema.ColumnMetadata;
@@ -77,8 +77,8 @@ public class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithScore>
         if (!cell.isLive(nowInSecs))
             return false;
 
-        assert cell instanceof CellWithSourceTable : "Expected CellWithSource, got " + cell.getClass();
-        return sourceTable.equals(((CellWithSourceTable<?>) cell).sourceTable());
+        assert cell instanceof CellWithSource : "Expected CellWithSource, got " + cell.getClass();
+        return sourceTable.equals(((CellWithSource<?>) cell).sourceTable());
     }
 
     @Override

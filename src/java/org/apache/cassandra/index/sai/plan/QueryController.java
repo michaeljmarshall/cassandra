@@ -61,7 +61,7 @@ import org.apache.cassandra.index.sai.iterators.KeyRangeUnionIterator;
 import org.apache.cassandra.index.sai.memory.MemtableIndex;
 import org.apache.cassandra.index.sai.utils.MergePrimaryKeyWithScoreIterator;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
-import org.apache.cassandra.index.sai.utils.RowWithSourceTable;
+import org.apache.cassandra.index.sai.utils.RowWithSource;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.net.ParamType;
 import org.apache.cassandra.schema.TableMetadata;
@@ -201,7 +201,7 @@ public class QueryController
             @Override
             protected Row applyToRow(Row row)
             {
-                return new RowWithSourceTable(row, sourceTable);
+                return new RowWithSource(row, sourceTable);
             }
         };
 
