@@ -124,9 +124,6 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
         return toScoreSortedIterator(result);
     }
 
-    /**
-     * Return bit set we need to search the graph; otherwise return posting list to bypass the graph
-     */
     private CloseableIterator<RowIdWithScore> searchInternal(AbstractBounds<PartitionPosition> keyRange, float[] queryVector, int limit, int topK) throws IOException
     {
         try (PrimaryKeyMap primaryKeyMap = primaryKeyMapFactory.newPerSSTablePrimaryKeyMap())

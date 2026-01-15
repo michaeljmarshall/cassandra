@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.index.sai.disk.v1.vector;
 
+import javax.annotation.concurrent.NotThreadSafe;
+
 import io.github.jbellis.jvector.graph.GraphIndex;
 import io.github.jbellis.jvector.graph.NeighborQueue;
 import io.github.jbellis.jvector.graph.NeighborSimilarity;
@@ -45,6 +47,7 @@ import org.apache.cassandra.utils.AbstractIterator;
  * <p>
  * As an implementation detail, we use a heap to maintain state rather than a List and sorting.
  */
+@NotThreadSafe
 public class BruteForceRowIdIterator extends AbstractIterator<RowIdWithScore>
 {
     // We use two binary heaps (NeighborQueue) because we do not need an eager ordering of
@@ -63,11 +66,11 @@ public class BruteForceRowIdIterator extends AbstractIterator<RowIdWithScore>
 
     /**
      * @param approximateScoreQueue A heap of indexes ordered by their approximate similarity scores
-     * @param segmentOrdinalPairs A mapping from the index in the approximateScoreQueue to the node's rowId and ordinal
-     * @param reranker A function that takes a graph ordinal and returns the exact similarity score
-     * @param limit The query limit
-     * @param topK The number of vectors to resolve and score before returning results
-     * @param view The view of the graph, passed so we can close it when the iterator is closed
+     * @param segmentOrdinalPairs   A mapping from the index in the approximateScoreQueue to the node's rowId and ordinal
+     * @param reranker              A function that takes a graph ordinal and returns the exact similarity score
+     * @param limit                 The query limit
+     * @param topK                  The number of vectors to resolve and score before returning results
+     * @param view                  The view of the graph, passed so we can close it when the iterator is closed
      */
     public BruteForceRowIdIterator(NeighborQueue approximateScoreQueue,
                                    SegmentRowIdOrdinalPairs segmentOrdinalPairs,
@@ -91,9 +94,11 @@ public class BruteForceRowIdIterator extends AbstractIterator<RowIdWithScore>
     protected RowIdWithScore computeNext()
     {
         int consumed = rerankedCount - exactScoreQueue.size();
-        if (consumed >= limit) {
+        if (consumed >= limit)
+        {
             // Refill the exactScoreQueue until it reaches topK exact scores, or the approximate score queue is empty
-            while (approximateScoreQueue.size() > 0 && exactScoreQueue.size() < topK) {
+            while (approximateScoreQueue.size() > 0 && exactScoreQueue.size() < topK)
+            {
                 int segmentOrdinalIndex = approximateScoreQueue.pop();
                 int rowId = segmentOrdinalPairs.getSegmentRowId(segmentOrdinalIndex);
                 int ordinal = segmentOrdinalPairs.getOrdinal(segmentOrdinalIndex);
