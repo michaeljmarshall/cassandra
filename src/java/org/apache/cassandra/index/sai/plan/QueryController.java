@@ -30,6 +30,7 @@ import javax.annotation.Nullable;
 
 import com.google.common.collect.Lists;
 
+import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataRange;
@@ -86,6 +87,9 @@ public class QueryController
             return new RowWithSource(row, sourceTable);
         }
     };
+
+    /** The maximum number of primary keys we will materialize when performing hybrid vector search */
+    public static int MAX_MATERIALIZED_KEYS = CassandraRelevantProperties.SAI_VECTOR_SEARCH_MAX_MATERIALIZE_KEYS.getInt();
 
     final QueryContext queryContext;
 
@@ -428,12 +432,15 @@ public class QueryController
             PrimaryKey maxToken = keyFactory.create(mergeRange.right.getToken());
             boolean hasLimitingMaxToken = !maxToken.token().isMinimum() && maxToken.compareTo(source.getMaximum()) < 0;
             List<PrimaryKey> primaryKeys = new ArrayList<>();
+            int count = 0;
             while (source.hasNext())
             {
                 PrimaryKey next = source.next();
                 if (hasLimitingMaxToken && next.compareTo(maxToken) > 0)
                     break;
                 primaryKeys.add(next);
+                if (MAX_MATERIALIZED_KEYS > ++count)
+                    throw new QueryMaterializesTooManyPrimaryKeysException("Too many primary keys. Attempted to load more than: " + MAX_MATERIALIZED_KEYS);
             }
             return primaryKeys;
         }

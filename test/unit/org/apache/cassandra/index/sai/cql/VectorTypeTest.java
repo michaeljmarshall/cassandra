@@ -35,6 +35,8 @@ import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
+import org.apache.cassandra.index.sai.plan.QueryController;
+import org.apache.cassandra.index.sai.plan.QueryMaterializesTooManyPrimaryKeysException;
 import org.apache.cassandra.service.ClientWarn;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -692,5 +694,32 @@ public class VectorTypeTest extends VectorTester
             assertRows(execute("SELECT ck FROM %s ORDER BY val ANN OF [0,1] LIMIT 3"), row(4), row(1), row(2));
             assertRows(execute("SELECT ck FROM %s ORDER BY val ANN OF [0,1] LIMIT 2"), row(4), row(1));
         });
+    }
+
+    @Test
+    public void testTooManyMaterializedKeys() throws Throwable
+    {
+        int originalValue = QueryController.MAX_MATERIALIZED_KEYS;
+        QueryController.MAX_MATERIALIZED_KEYS = 10;
+        try
+        {
+            createTable("CREATE TABLE %s (pk int primary key, i int, val vector<float, 2>)");
+            createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
+            createIndex("CREATE CUSTOM INDEX ON %s(i) USING 'StorageAttachedIndex'");
+
+            for (int i = 1; i <= QueryController.MAX_MATERIALIZED_KEYS * 10; i++)
+                execute("INSERT INTO %s (pk, i, val) VALUES (?, ?, [1,0])", i, i);
+
+            beforeAndAfterFlush(() -> {
+                // Search for less than half of the table, but over the MAX_MATERIALIZED_KEYS value to trigger exception.
+                assertInvalidThrow(QueryMaterializesTooManyPrimaryKeysException.class,
+                                   "SELECT pk FROM %s WHERE i < ? ORDER BY val ANN OF [0,1] LIMIT 3",
+                                   QueryController.MAX_MATERIALIZED_KEYS * 2);
+            });
+        }
+        finally
+        {
+            QueryController.MAX_MATERIALIZED_KEYS = originalValue;
+        }
     }
 }

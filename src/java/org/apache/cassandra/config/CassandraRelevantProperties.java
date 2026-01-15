@@ -459,6 +459,9 @@ public enum CassandraRelevantProperties
     SAI_VECTOR_ALLOW_CUSTOM_PARAMETERS("cassandra.sai.vector.allow_custom_parameters", "false"),
 
     /** Controls the maximum top-k limit for vector search */
+    SAI_VECTOR_SEARCH_MAX_MATERIALIZE_KEYS("cassandra.sai.vector_search.max_materialized_keys", "1000000"),
+
+    /** Controls the maximum top-k limit for vector search */
     SAI_VECTOR_SEARCH_MAX_TOP_K("cassandra.sai.vector_search.max_top_k", "1000"),
 
     SCHEMA_PULL_INTERVAL_MS("cassandra.schema_pull_interval_ms", "60000"),
