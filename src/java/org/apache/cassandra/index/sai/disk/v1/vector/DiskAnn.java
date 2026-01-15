@@ -37,6 +37,7 @@ import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.CloseableIterator;
+import org.apache.cassandra.utils.Throwables;
 
 public class DiskAnn implements AutoCloseable
 {
@@ -118,10 +119,10 @@ public class DiskAnn implements AutoCloseable
             AutoResumingNodeScoreIterator nodeScoreIterator = new AutoResumingNodeScoreIterator(searcher, scoreFunction, reRanker, topK, acceptedBits, nodesVisitedConsumer, false, source, view);
             return new NodeScoreToRowIdWithScoreIterator(nodeScoreIterator, ordinalsMap.getRowIdsView());
         }
-        catch (Exception e)
+        catch (Throwable e)
         {
             FileUtils.closeQuietly(view);
-            throw new RuntimeException(e);
+            throw Throwables.unchecked(e);
         }
     }
 

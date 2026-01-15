@@ -57,7 +57,7 @@ public class RowIdToPrimaryKeyWithScoreIterator extends AbstractIterator<Primary
         if (!scoredRowIdIterator.hasNext())
             return endOfData();
         RowIdWithScore rowIdWithScore = scoredRowIdIterator.next();
-        return rowIdWithScore.buildPrimaryKeyWithScore(column, sstableId, primaryKeyMap, segmentRowIdOffset);
+        return rowIdWithScore.toPrimaryKeyWithScore(column, sstableId, primaryKeyMap, segmentRowIdOffset);
     }
 
     @Override

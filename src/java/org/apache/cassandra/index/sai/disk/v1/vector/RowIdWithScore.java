@@ -37,10 +37,10 @@ public class RowIdWithScore
         this.score = score;
     }
 
-    public PrimaryKeyWithScore buildPrimaryKeyWithScore(ColumnMetadata columnMetadata,
-                                                        SSTableId sstableId,
-                                                        PrimaryKeyMap primaryKeyMap,
-                                                        long segmentRowIdOffset)
+    public PrimaryKeyWithScore toPrimaryKeyWithScore(ColumnMetadata columnMetadata,
+                                                     SSTableId sstableId,
+                                                     PrimaryKeyMap primaryKeyMap,
+                                                     long segmentRowIdOffset)
     {
         PrimaryKey pk = primaryKeyMap.primaryKeyFromRowId(segmentRowIdOffset + segmentRowId);
         return new PrimaryKeyWithScore(columnMetadata, sstableId, pk, score);

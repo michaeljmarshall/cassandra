@@ -130,11 +130,8 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
         {
             // not restricted
             if (RangeUtil.coversFullRing(keyRange))
-            {
-                int expectedNodesVisited = expectedNodesVisited(limit, graph.size(), graph.size());
-                IntConsumer nodesVisitedConsumer = nodesVisited -> updateExpectedNodes(nodesVisited, expectedNodesVisited);
-                return graph.search(queryVector, topK, limit, new Bits.MatchAllBits(graph.size()), nodesVisitedConsumer);
-            }
+                return searchInternalUnrestricted(queryVector, limit, topK);
+
 
             // it will return the next row id if given key is not found.
             long minSSTableRowId = primaryKeyMap.ceiling(keyRange.left.getToken());
@@ -148,11 +145,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
 
             // if it covers entire segment, skip bit set
             if (minSSTableRowId <= metadata.minSSTableRowId && maxSSTableRowId >= metadata.maxSSTableRowId)
-            {
-                int expectedNodesVisited = expectedNodesVisited(limit, graph.size(), graph.size());
-                IntConsumer nodesVisitedConsumer = nodesVisited -> updateExpectedNodes(nodesVisited, expectedNodesVisited);
-                return graph.search(queryVector, topK, limit, new Bits.MatchAllBits(graph.size()), nodesVisitedConsumer);
-            }
+                return searchInternalUnrestricted(queryVector, limit, topK);
 
             minSSTableRowId = Math.max(minSSTableRowId, metadata.minSSTableRowId);
             maxSSTableRowId = min(maxSSTableRowId, metadata.maxSSTableRowId);
@@ -213,6 +206,13 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
         }
     }
 
+    private CloseableIterator<RowIdWithScore> searchInternalUnrestricted(float[] queryVector, int limit, int topK)
+    {
+        int expectedNodesVisited = expectedNodesVisited(limit, graph.size(), graph.size());
+        IntConsumer nodesVisitedConsumer = nodesVisited -> updateExpectedNodes(nodesVisited, expectedNodesVisited);
+        return graph.search(queryVector, topK, limit, new Bits.MatchAllBits(graph.size()), nodesVisitedConsumer);
+    }
+
     private long getMaxSSTableRowId(PrimaryKeyMap primaryKeyMap, PartitionPosition right)
     {
         // if the right token is the minimum token, there is no upper bound on the keyRange and
@@ -243,8 +243,10 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
         if (segmentOrdinalPairs.size() == 0)
             return CloseableIterator.empty();
 
-        // TODO add heuristic to determine if we should use one pass even though we have PQ
-        if (graph.getCompressedVectors() != null)
+        // If we have more than topK segmentOrdinalPairs, we do a two pass partial sort by first getting the approximate
+        // similarity score via the PQ vectors that are already in memory and then by hitting disk to get the full
+        // precision vectors to get the full precision similarity score.
+        if (graph.getCompressedVectors() != null && segmentOrdinalPairs.size() > topK)
             return orderByBruteForceTwoPass(graph.getCompressedVectors(), queryVector, segmentOrdinalPairs, limit, topK);
 
         try (GraphIndex.View<float[]> view = graph.getView())

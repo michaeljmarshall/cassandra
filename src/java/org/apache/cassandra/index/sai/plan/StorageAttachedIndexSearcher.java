@@ -768,6 +768,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
 
                 if (clusters == null)
                 {
+                    // Key counts as processed because the materialized row didn't satisfy the filter logic
                     processedKeys.add(pk);
                     return null;
                 }
@@ -787,6 +788,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
                 {
                     if (clusters.isEmpty())
                     {
+                        // Key counts as processed because the materialized row didn't satisfy the filter logic
                         processedKeys.add(pk);
                         return null;
                     }
@@ -805,6 +807,10 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
                         return new SinglePartitionIterator(partition, staticRow, clusters.iterator());
                     }
                 }
+                // Key does not count as processed because the only thing that "failed" is the validity check on the
+                // grouped source keys, and it is possible that the score ordered iterator has the same key in the
+                // iterator lower. We only get here when a vector's value is updated to a more distant vector, so
+                // the old value ranks high in the iterator, but isn't the current value for the materialized row.
                 return null;
             }
         }
