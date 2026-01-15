@@ -123,9 +123,9 @@ public class Segment implements SegmentOrdering, Closeable
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> results, Expression orderer) throws IOException
     {
-        return index.orderResultsBy(context, primaryKeys, orderer);
+        return index.orderResultsBy(context, results, orderer);
     }
 
     @Override

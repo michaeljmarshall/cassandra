@@ -209,7 +209,7 @@ public class VectorMemoryIndex extends MemoryIndex
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression orderer)
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> results, Expression orderer)
     {
         if (minimumKey == null)
             // This case implies maximumKey is empty too.
@@ -217,26 +217,26 @@ public class VectorMemoryIndex extends MemoryIndex
 
         int limit = queryContext.limit();
 
-        List<PrimaryKey> results = primaryKeys.stream()
-                                              .dropWhile(k -> k.compareTo(minimumKey) < 0)
-                                              .takeWhile(k -> k.compareTo(maximumKey) <= 0)
-                                              .collect(Collectors.toList());
+        List<PrimaryKey> resultsInRange = results.stream()
+                                                 .dropWhile(k -> k.compareTo(minimumKey) < 0)
+                                                 .takeWhile(k -> k.compareTo(maximumKey) <= 0)
+                                                 .collect(Collectors.toList());
 
-        int maxBruteForceRows = maxBruteForceRows(limit, results.size(), graph.size());
+        int maxBruteForceRows = maxBruteForceRows(limit, resultsInRange.size(), graph.size());
         Tracing.trace("SAI materialized {} rows; max brute force rows is {} for memtable index with {} nodes, LIMIT {}",
-                      results.size(), maxBruteForceRows, graph.size(), limit);
+                      resultsInRange.size(), maxBruteForceRows, graph.size(), limit);
 
-        if (results.isEmpty())
+        if (resultsInRange.isEmpty())
             return CloseableIterator.empty();
 
         ByteBuffer buffer = orderer.lower().value.raw;
         float[] qv = index.termType().decomposeVector(buffer);
 
-        if (results.size() <= maxBruteForceRows)
-            return orderByBruteForce(qv, results);
+        if (resultsInRange.size() <= maxBruteForceRows)
+            return orderByBruteForce(qv, resultsInRange);
 
         // Search the graph for the topK vectors near the query
-        KeyFilteringBits bits = new KeyFilteringBits(results);
+        KeyFilteringBits bits = new KeyFilteringBits(resultsInRange);
         CloseableIterator<SearchResult.NodeScore> nodeScores = graph.search(qv, limit, bits);
         return new NodeScoreToScoredPrimaryKeyIterator(nodeScores);
     }

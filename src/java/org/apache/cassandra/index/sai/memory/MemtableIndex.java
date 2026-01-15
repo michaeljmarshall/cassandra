@@ -127,8 +127,8 @@ public class MemtableIndex implements MemtableOrdering
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> primaryKeys, Expression orderer)
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext queryContext, List<PrimaryKey> results, Expression orderer)
     {
-        return memoryIndex.orderResultsBy(queryContext, primaryKeys, orderer);
+        return memoryIndex.orderResultsBy(queryContext, results, orderer);
     }
 }

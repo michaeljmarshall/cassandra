@@ -102,7 +102,7 @@ public class EmptyIndex extends SSTableIndex
     }
 
     @Override
-    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> results, Expression orderer) throws IOException
     {
         return List.of();
     }

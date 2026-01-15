@@ -285,14 +285,14 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     }
 
     @Override
-    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
+    public CloseableIterator<PrimaryKeyWithScore> orderResultsBy(QueryContext context, List<PrimaryKey> results, Expression orderer) throws IOException
     {
         int limit = context.limit();
         // VSTODO would it be better to do a binary search to find the boundaries?
-        List<PrimaryKey> keysInRange = primaryKeys.stream()
-                                                  .dropWhile(k -> k.compareTo(metadata.minKey) < 0)
-                                                  .takeWhile(k -> k.compareTo(metadata.maxKey) <= 0)
-                                                  .collect(Collectors.toList());
+        List<PrimaryKey> keysInRange = results.stream()
+                                              .dropWhile(k -> k.compareTo(metadata.minKey) < 0)
+                                              .takeWhile(k -> k.compareTo(metadata.maxKey) <= 0)
+                                              .collect(Collectors.toList());
         if (keysInRange.isEmpty())
             return CloseableIterator.empty();
 

@@ -189,12 +189,12 @@ public class V1SSTableIndex extends SSTableIndex
         return iterators;
     }
 
-    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException
+    public List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> results, Expression orderer) throws IOException
     {
         // Return a list to allow the caller to merge the results from multiple sstables into a single iterator.
         List<CloseableIterator<PrimaryKeyWithScore>> iterators = new ArrayList<>(segments.size());
         for (Segment segment : segments)
-            iterators.add(segment.orderResultsBy(context, primaryKeys, orderer));
+            iterators.add(segment.orderResultsBy(context, results, orderer));
 
         return iterators;
     }

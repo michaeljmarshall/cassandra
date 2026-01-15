@@ -145,7 +145,7 @@ public abstract class SSTableIndex implements Comparable<SSTableIndex>
                                                   QueryContext context) throws IOException;
 
     public abstract List<CloseableIterator<PrimaryKeyWithScore>> orderBy(Expression orderer, AbstractBounds<PartitionPosition> keyRange, QueryContext context) throws IOException;
-    public abstract List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> primaryKeys, Expression orderer) throws IOException;
+    public abstract List<CloseableIterator<PrimaryKeyWithScore>> orderResultsBy(QueryContext context, List<PrimaryKey> results, Expression orderer) throws IOException;
 
     /**
      * Populates a virtual table using the index metadata owned by the index
