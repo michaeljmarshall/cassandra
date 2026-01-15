@@ -485,13 +485,15 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
                 queryContext.partitionsRead++;
                 queryContext.checkpoint();
 
-                UnfilteredRowIterator filtered = filterPartition(partition, filterTree, queryContext);
+                List<Row> filtered = filterPartition(partition, filterTree, queryContext);
 
-                // Note that we record the duration of the read after post-filtering, which actually 
+                // Note that we record the duration of the read after post-filtering, which actually
                 // materializes the rows from disk.
                 tableQueryMetrics.postFilteringReadLatency.update(Clock.Global.nanoTime() - startTimeNanos, TimeUnit.NANOSECONDS);
 
-                return filtered;
+                return filtered != null
+                       ? new SinglePartitionIterator(partition, partition.staticRow(), filtered.iterator())
+                       : null;
             }
         }
 
@@ -509,14 +511,13 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         }
     }
 
-    private static UnfilteredRowIterator filterPartition(UnfilteredRowIterator partition, FilterTree tree, QueryContext context)
+    private static List<Row> filterPartition(UnfilteredRowIterator partition, FilterTree tree, QueryContext context)
     {
         Row staticRow = partition.staticRow();
         DecoratedKey partitionKey = partition.partitionKey();
-        List<Unfiltered> matches = new ArrayList<>();
+        List<Row> matches = new ArrayList<>();
         boolean hasMatch = false;
 
-        // todo static keys??
         while (partition.hasNext())
         {
             Unfiltered unfiltered = partition.next();
@@ -527,7 +528,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
 
                 if (tree.isSatisfiedBy(partitionKey, (Row) unfiltered, staticRow))
                 {
-                    matches.add(unfiltered);
+                    matches.add((Row) unfiltered);
                     hasMatch = true;
                 }
             }
@@ -552,15 +553,15 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             return null;
         }
 
-        // Return all matches found, along with the static row...
-        return new SinglePartitionIterator(partition, staticRow, matches.iterator());
+        // Return all matches found
+        return matches;
     }
 
     private static class SinglePartitionIterator extends AbstractUnfilteredRowIterator
     {
-        private final Iterator<Unfiltered> rows;
+        private final Iterator<Row> rows;
 
-        public SinglePartitionIterator(UnfilteredRowIterator partition, Row staticRow, Iterator<Unfiltered> rows)
+        public SinglePartitionIterator(UnfilteredRowIterator partition, Row staticRow, Iterator<Row> rows)
         {
             super(partition.metadata(),
                   partition.partitionKey(),
@@ -601,6 +602,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         private final ReadExecutionController executionController;
         private final QueryContext queryContext;
 
+        private final boolean isVectorColumnStatic;
         private final HashSet<PrimaryKey> processedKeys;
         private final Queue<UnfilteredRowIterator> pendingRows;
 
@@ -629,6 +631,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             this.executionController = executionController;
             this.queryContext = queryContext;
 
+            this.isVectorColumnStatic = queryExpressionView.expression.getIndexTermType().columnMetadata().isStatic();
             this.processedKeys = new HashSet<>(limit);
             this.pendingRows = new ArrayDeque<>(limit);
             this.softLimit = limit;
@@ -652,8 +655,9 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         {
             // Group PKs by source sstable/memtable
             Map<PrimaryKey, List<PrimaryKeyWithScore>> groupedKeys = new HashMap<>();
-            // We always want to get at least 1.
-            int rowsToRetrieve = Math.max(1, softLimit - returnedRowCount);
+            // We always want to get at least 1. When the vector column is static, we cannot batch because we need to
+            // retain the score ordering a bit longer.
+            int rowsToRetrieve = isVectorColumnStatic ? 1 : Math.max(1, softLimit - returnedRowCount);
             // We want to get the first unique `rowsToRetrieve` keys to materialize
             // Don't pass the priority queue here because it is more efficient to add keys in bulk
             fillKeys(groupedKeys, rowsToRetrieve, null);
@@ -759,37 +763,49 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             {
                 queryContext.partitionsRead++;
                 queryContext.checkpoint();
-                Row staticRow = partition.staticRow();
-                UnfilteredRowIterator clusters = filterPartition(partition, filterTree, queryContext);
 
-                if (clusters == null || !clusters.hasNext())
+                List<Row> clusters = filterPartition(partition, filterTree, queryContext);
+
+                if (clusters == null)
                 {
                     processedKeys.add(pk);
                     return null;
                 }
 
+                Row staticRow = partition.staticRow();
                 long now = FBUtilities.nowInSeconds();
-                boolean isRowValid = false;
-                Unfiltered row = clusters.next();
-                assert !clusters.hasNext() : "Expected only one row per partition";
-                if (!row.isRangeTombstoneMarker())
+
+                // If the pk is static, then we must check that the static row satisfies the source key's validity check.
+                // Otherwise, we need to make sure that we have one row in the cluster result and then we use that
+                // for checking validity.
+                Row representativeRow;
+                if (pk.kind() == PrimaryKey.Kind.STATIC)
                 {
-                    for (PrimaryKeyWithScore sourceKey : sourceKeys)
+                    representativeRow = staticRow;
+                }
+                else
+                {
+                    if (clusters.isEmpty())
                     {
-                        // Each of these primary keys are equal, but they have different source tables. Therefore,
-                        // we check to see if the row is valid for any of them, and if it is, we return the row.
-                        if (sourceKey.isIndexDataValid((Row) row, now))
-                        {
-                            isRowValid = true;
-                            // We can only count the pk as processed once we know it was valid for one of the
-                            // scored keys.
-                            processedKeys.add(pk);
-                            break;
-                        }
+                        processedKeys.add(pk);
+                        return null;
+                    }
+                    representativeRow = clusters.get(0);
+                    assert clusters.size() == 1 : "Expect 1 result row, but got: " + clusters.size();
+                }
+
+                // Each of sourceKeys are equal with respect to primary key equality, but they have different source tables.
+                // As long as one is valid, we consider the row valid.
+                for (PrimaryKeyWithScore sourceKey : sourceKeys)
+                {
+                    assert sourceKey.primaryKey().kind() == pk.kind();
+                    if (sourceKey.isIndexDataValid(representativeRow, now))
+                    {
+                        processedKeys.add(pk);
+                        return new SinglePartitionIterator(partition, staticRow, clusters.iterator());
                     }
                 }
-                return isRowValid ? new PrimaryKeyIterator(partition, staticRow, row)
-                                  : null;
+                return null;
             }
         }
 
@@ -802,34 +818,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         public void close()
         {
             FileUtils.closeQuietly(scoredPrimaryKeyIterator);
-        }
-
-        public static class PrimaryKeyIterator extends AbstractUnfilteredRowIterator
-        {
-            private boolean consumed = false;
-            private final Unfiltered row;
-
-            public PrimaryKeyIterator(UnfilteredRowIterator partition, Row staticRow, Unfiltered content)
-            {
-                super(partition.metadata(),
-                      partition.partitionKey(),
-                      partition.partitionLevelDeletion(),
-                      partition.columns(),
-                      staticRow,
-                      partition.isReverseOrder(),
-                      partition.stats());
-
-                this.row = content;
-            }
-
-            @Override
-            protected Unfiltered computeNext()
-            {
-                if (consumed)
-                    return endOfData();
-                consumed = true;
-                return row;
-            }
         }
     }
 

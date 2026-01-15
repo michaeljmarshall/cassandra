@@ -786,6 +786,9 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                     UnfilteredRowIterator iter = intersects ? makeRowIteratorWithLowerBound(cfs, sstable, metricsCollector)
                                                             : makeRowIteratorWithSkippedNonStaticContent(cfs, sstable, metricsCollector);
 
+                    if (rowTransformer != null)
+                        iter = Transformation.apply(iter, rowTransformer.apply(sstable.getId()));
+
                     inputCollector.addSSTableIterator(sstable, iter);
                     mostRecentPartitionTombstone = Math.max(mostRecentPartitionTombstone,
                                                             iter.partitionLevelDeletion().markedForDeleteAt());

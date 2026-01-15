@@ -172,13 +172,11 @@ public class VectorTopKProcessor
             TreeMap<PartitionInfo, TreeSet<Unfiltered>> unfilteredByPartition = new TreeMap<>(Comparator.comparing(pi -> pi.key));
 
             int rowsMatched = 0;
-            // Because each “partition” from ScoreOrderedResultRetriever is actually a single row
-            // or tombstone, we can simply read them until we have enough.
             while (rowsMatched < limit && partitions.hasNext())
             {
                 try (BaseRowIterator<?> partitionRowIterator = partitions.next())
                 {
-                    rowsMatched += processSingleRowPartition(unfilteredByPartition, partitionRowIterator);
+                    rowsMatched += processSingleRowPartition(unfilteredByPartition, partitionRowIterator, limit - rowsMatched);
                 }
             }
 
@@ -190,19 +188,25 @@ public class VectorTopKProcessor
      * Processes a single partition, without scoring it.
      */
     private int processSingleRowPartition(TreeMap<PartitionInfo, TreeSet<Unfiltered>> unfilteredByPartition,
-                                          BaseRowIterator<?> partitionRowIterator)
+                                          BaseRowIterator<?> partitionRowIterator,
+                                          int reamining)
     {
         if (!partitionRowIterator.hasNext())
             return 0;
 
-        Unfiltered unfiltered = partitionRowIterator.next();
-        assert !partitionRowIterator.hasNext() : "Only one row should be returned";
         // Always include tombstones for coordinator. It relies on ReadCommand#withMetricsRecording to throw
         // TombstoneOverwhelmingException to prevent OOM.
         PartitionInfo partitionInfo = PartitionInfo.create(partitionRowIterator);
         TreeSet<Unfiltered> map = unfilteredByPartition.computeIfAbsent(partitionInfo, k -> new TreeSet<>(command.metadata().comparator));
-        map.add(unfiltered);
-        return unfiltered.isRangeTombstoneMarker() ? 0 : 1;
+        int added = 0;
+        while (partitionRowIterator.hasNext() && added < reamining)
+        {
+            Unfiltered unfiltered = partitionRowIterator.next();
+            map.add(unfiltered);
+            if (unfiltered.isRow())
+                added++;
+        }
+        return added;
     }
 
     private Pair<StorageAttachedIndex, float[]> findTopKIndex()

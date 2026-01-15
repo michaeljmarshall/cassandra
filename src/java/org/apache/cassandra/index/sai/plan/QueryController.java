@@ -72,6 +72,21 @@ import org.apache.cassandra.utils.Throwables;
 
 public class QueryController
 {
+    // Transforms a row to include its source table, which is then used for ANN query validation.
+    private final static Function<Object, Transformation<BaseRowIterator<?>>> SOURCE_TABLE_ROW_TRANSFORMER = (Object sourceTable) -> new Transformation<>()
+    {
+        @Override
+        protected Row applyToStatic(Row row)
+        {
+            return new RowWithSource(row, sourceTable);
+        }
+        @Override
+        protected Row applyToRow(Row row)
+        {
+            return new RowWithSource(row, sourceTable);
+        }
+    };
+
     final QueryContext queryContext;
 
     private final ColumnFamilyStore cfs;
@@ -176,17 +191,19 @@ public class QueryController
     }
 
     /**
-     * Get an iterator over the rows for this partition key. Restrict the search to the specified view.
-     * @param key
-     * @param executionController
-     * @return
+     * Get an iterator over the row(s) for this primary key. Restrict the search to the specified view. Apply the
+     * {@link #SOURCE_TABLE_ROW_TRANSFORMER} so that resulting cells have the source memtable/sstable. Expect one row
+     * for a fully qualified primary key or all rows within a partition for a static primary key.
+     *
+     * @param key primary key to fetch from storage.
+     * @param executionController the executionController to use when querying storage
+     * @return an iterator of rows matching the query
      */
     public UnfilteredRowIterator queryStorage(PrimaryKey key, ColumnFamilyStore.ViewFragment view, ReadExecutionController executionController)
     {
         if (key == null)
             throw new IllegalArgumentException("non-null key required");
 
-        // TODO how do we want to handle static rows?
         SinglePartitionReadCommand partition = SinglePartitionReadCommand.create(cfs.metadata(),
                                                                                  command.nowInSec(),
                                                                                  command.columnFilter(),
@@ -195,17 +212,7 @@ public class QueryController
                                                                                  key.partitionKey(),
                                                                                  makeFilter(List.of(key)));
 
-        // Class to transform the row to include its source table.
-        Function<Object, Transformation<BaseRowIterator<?>>> rowTransformer = (Object sourceTable) -> new Transformation<>()
-        {
-            @Override
-            protected Row applyToRow(Row row)
-            {
-                return new RowWithSource(row, sourceTable);
-            }
-        };
-
-        return partition.queryMemtableAndDisk(cfs, view, rowTransformer, executionController);
+        return partition.queryMemtableAndDisk(cfs, view, SOURCE_TABLE_ROW_TRANSFORMER, executionController);
     }
 
     /**

@@ -903,4 +903,21 @@ public class VectorUpdateDeleteTest extends VectorTester
             assertThat(allData).hasSize(2);
         }
     }
+
+    @Test
+    public void testUpdatedVectorStaticVectorColumnIndex() throws Throwable
+    {
+        createTable("CREATE TABLE %s (pk int, ck int, val vector<float, 2> static, PRIMARY KEY(pk, ck))");
+        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
+
+        // This counts as an update because the indexed column is static and is therefore operated on at the partition
+        // level.
+        execute("INSERT INTO %s (pk, ck, val) VALUES (0, 1, [0,2])");
+        execute("INSERT INTO %s (pk, ck, val) VALUES (0, 2, [1,0])");
+        execute("INSERT INTO %s (pk, ck, val) VALUES (1, 3, [0,1])");
+
+        beforeAndAfterFlush(() -> {
+            assertRows(execute("SELECT ck FROM %s ORDER BY val ANN OF [1,0] LIMIT 2"), row(1), row(2));
+        });
+    }
 }

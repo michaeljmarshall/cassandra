@@ -676,4 +676,21 @@ public class VectorTypeTest extends VectorTester
         execute("INSERT INTO %s (pk, metadata, row_v) VALUES (10, {'map_k' : 'map_v'}, [0.11, 0.19])");
         assertRows(execute(select), row);
     }
+
+    @Test
+    public void testStaticVectorColumnIndex() throws Throwable
+    {
+        createTable("CREATE TABLE %s (pk int, ck int, val vector<float, 2> static, PRIMARY KEY(pk, ck))");
+        createIndex("CREATE CUSTOM INDEX ON %s(val) USING 'StorageAttachedIndex'");
+
+        execute("INSERT INTO %s (pk, ck, val) VALUES (0, 1, [1,0])");
+        execute("INSERT INTO %s (pk, ck)      VALUES (0, 2)");
+        execute("INSERT INTO %s (pk, ck, val) VALUES (1, 3, [0,-1])");
+        execute("INSERT INTO %s (pk, ck, val) VALUES (2, 4, [0,1])");
+
+        beforeAndAfterFlush(() -> {
+            assertRows(execute("SELECT ck FROM %s ORDER BY val ANN OF [0,1] LIMIT 3"), row(4), row(1), row(2));
+            assertRows(execute("SELECT ck FROM %s ORDER BY val ANN OF [0,1] LIMIT 2"), row(4), row(1));
+        });
+    }
 }
