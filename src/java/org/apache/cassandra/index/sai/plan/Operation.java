@@ -335,7 +335,7 @@ public class Operation
             return controller.getTopKRows(view);
 
         // Otherwise, we need to search first, then order.
-        KeyRangeIterator iterator = Node.buildTree(controller.indexFilter()).analyzeTree(controller).rangeIterator(controller);
+        KeyRangeIterator iterator = buildIterator(controller);
         return controller.getTopKRows(iterator, view);
     }
 

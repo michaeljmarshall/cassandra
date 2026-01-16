@@ -150,9 +150,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
             minSSTableRowId = Math.max(minSSTableRowId, metadata.minSSTableRowId);
             maxSSTableRowId = min(maxSSTableRowId, metadata.maxSSTableRowId);
 
-            // If num of matches are not bigger than limit, skip ANN.
-            // (nRows should not include shadowed rows, but context doesn't break those out by segment,
-            // so we will live with the inaccuracy.)
+            // If num of matches are not bigger than limit, skip graph search and lazily sort by brute force.
             int nRows = Math.toIntExact(maxSSTableRowId - minSSTableRowId + 1);
             int maxBruteForceRows = maxBruteForceRows(limit, nRows, graph.size());
             logger.trace("Search range covers {} rows; max brute force rows is {} for sstable index with {} nodes, LIMIT {}",
@@ -252,7 +250,6 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
         {
             NeighborSimilarity.ExactScoreFunction esf = graph.getExactScoreFunction(queryVector, view);
             NeighborQueue scoredRowIds = segmentOrdinalPairs.mapToSegmentRowIdScoreHeap(esf);
-            // TODO metrics? columnQueryMetrics.onBruteForceNodesReranked(segmentOrdinalPairs.size());
             return new NeighborQueueRowIdIterator(scoredRowIds);
         }
         catch (Exception e)
