@@ -245,7 +245,6 @@ public class VectorMemoryIndex extends MemoryIndex
     {
         int expectedNodesVisited = expectedNodesVisited(limit, nPermittedOrdinals, graphSize);
         // ANN index will do a bunch of extra work besides the full comparisons (performing PQ similarity for each edge);
-        // brute force from sstable will also do a bunch of extra work (going through trie index to look up row).
         // VSTODO I'm not sure which one is more expensive (and it depends on things like sstable chunk cache hit ratio)
         // so I'm leaving it as a 1:1 ratio for now.
         return max(limit, expectedNodesVisited);
