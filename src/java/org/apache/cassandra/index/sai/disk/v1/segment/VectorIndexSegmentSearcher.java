@@ -354,12 +354,14 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
 
     private int maxBruteForceRows(int limit, int nPermittedOrdinals, int graphSize)
     {
-        int expectedNodes = expectedNodesVisited(limit, nPermittedOrdinals, graphSize);
-        // ANN index will do a bunch of extra work besides the full comparisons (performing PQ similarity for each edge);
-        // brute force from sstable will also do a bunch of extra work (going through trie index to look up row).
-        // VSTODO I'm not sure which one is more expensive (and it depends on things like sstable chunk cache hit ratio)
-        // so I'm leaving it as a 1:1 ratio for now.
-        return max(limit, expectedNodes);
+        int expectedNodesVisited = expectedNodesVisited(limit, nPermittedOrdinals, graphSize);
+        int expectedComparisons = index.indexWriterConfig().getMaximumNodeConnections() * expectedNodesVisited;
+        // in-memory comparisons are cheaper than pulling a row off disk and then comparing
+        // VSTODO this is dramatically oversimplified
+        // larger dimension should increase this, because comparisons are more expensive
+        // lower chunk cache hit ratio should decrease this, because loading rows is more expensive
+        double memoryToDiskFactor = 0.25;
+        return (int) max(limit, memoryToDiskFactor * expectedComparisons);
     }
 
     private int expectedNodesVisited(int limit, int nPermittedOrdinals, int graphSize)
