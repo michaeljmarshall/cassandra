@@ -19,6 +19,7 @@
 package org.apache.cassandra.index.sai.disk.v1.vector;
 
 import org.apache.cassandra.db.memtable.Memtable;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.index.sai.utils.CellWithSource;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
@@ -73,7 +74,7 @@ public class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithScore>
         if (row.isStatic() != columnMetadata.isStatic())
             return true;
 
-        var cell = row.getCell(columnMetadata);
+        Cell<?> cell = row.getCell(columnMetadata);
         if (!cell.isLive(nowInSecs))
             return false;
 
