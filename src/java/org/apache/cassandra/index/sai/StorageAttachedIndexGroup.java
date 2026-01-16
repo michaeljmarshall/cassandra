@@ -175,15 +175,6 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
         return indexers.isEmpty() ? null : new Index.Indexer()
         {
             @Override
-            public void begin()
-            {
-                // TODO is this a good solution? I only need this because we do not always
-                //  indexed everything in insertRow and updateRow.
-                for (Index.Indexer indexer : indexers)
-                    indexer.begin();
-            }
-
-            @Override
             public void insertRow(Row row)
             {
                 // SAI does not index deletions, as these are resolved during post-filtering.

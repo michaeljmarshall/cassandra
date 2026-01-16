@@ -234,9 +234,8 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     }
 
     /**
-     * Produces a correct ranking of the rows in the given segment. Because this graph does not have compressed
-     * vectors, read all vectors and put them into a priority queue to rank them lazily. It is assumed that the whole
-     * PQ will often not be needed.
+     * Produces a descending score ordered iterator over the rows in the given segment. Branches depending on the number
+     * of rows to consider and whether the graph has compressed vectors available for faster comparisons.
      */
     private CloseableIterator<RowIdWithScore> orderByBruteForce(float[] queryVector, SegmentRowIdOrdinalPairs segmentOrdinalPairs, int limit, int topK) throws IOException
     {

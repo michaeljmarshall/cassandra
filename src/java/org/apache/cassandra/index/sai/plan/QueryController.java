@@ -439,7 +439,7 @@ public class QueryController
                 if (hasLimitingMaxToken && next.compareTo(maxToken) > 0)
                     break;
                 primaryKeys.add(next);
-                if (MAX_MATERIALIZED_KEYS > ++count)
+                if (MAX_MATERIALIZED_KEYS < ++count)
                     throw new QueryMaterializesTooManyPrimaryKeysException("Too many primary keys. Attempted to load more than: " + MAX_MATERIALIZED_KEYS);
             }
             return primaryKeys;
