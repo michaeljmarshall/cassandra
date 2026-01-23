@@ -710,10 +710,10 @@ public class VectorTypeTest extends VectorTester
                 execute("INSERT INTO %s (pk, i, val) VALUES (?, ?, [1,0])", i, i);
 
             beforeAndAfterFlush(() -> {
-                // Search for less than half of the table, but over the MAX_MATERIALIZED_KEYS value to trigger exception.
-                assertInvalidThrow(QueryMaterializesTooManyPrimaryKeysException.class,
-                                   "SELECT pk FROM %s WHERE i < ? ORDER BY val ANN OF [0,1] LIMIT 3",
-                                   QueryController.MAX_MATERIALIZED_KEYS * 2);
+                // Search for less than half of the table, which is over the MAX_MATERIALIZED_KEYS value to trigger
+                // the switched order by then filter query execution.
+                UntypedResultSet rows = execute("SELECT pk FROM %s WHERE i < ? ORDER BY val ANN OF [0,1] LIMIT 3", QueryController.MAX_MATERIALIZED_KEYS * 2);
+                assertRowCount(rows, 3);
             });
         }
         finally

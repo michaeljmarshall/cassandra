@@ -88,7 +88,10 @@ public class QueryController
         }
     };
 
-    /** The maximum number of primary keys we will materialize when performing hybrid vector search */
+    /**
+     * The maximum number of primary keys we will materialize when performing hybrid vector search. If this limit is
+     * exceeded, we switch to an order-by-then-filter execution path
+     */
     public static int MAX_MATERIALIZED_KEYS = CassandraRelevantProperties.SAI_VECTOR_SEARCH_MAX_MATERIALIZE_KEYS.getInt();
 
     final QueryContext queryContext;
@@ -386,6 +389,8 @@ public class QueryController
     public CloseableIterator<PrimaryKeyWithScore> getTopKRows(KeyRangeIterator source, QueryViewBuilder.QueryExpressionView queryExpressionView)
     {
         List<PrimaryKey> primaryKeys = materializeKeysAndCloseSource(source);
+        if (primaryKeys == null)
+            return getTopKRows(queryExpressionView);
         if (primaryKeys.isEmpty())
             return CloseableIterator.empty();
         return getTopKRows(primaryKeys, queryExpressionView);
@@ -416,7 +421,8 @@ public class QueryController
      * Materialize the keys from the given source iterator. If there is a meaningful {@link #mergeRange}, the keys
      * are filtered to only include those within the range. Note: closes the source iterator.
      * @param source The source iterator to fully consume by materializing its keys
-     * @return The list of materialized keys within the {@link #mergeRange}.
+     * @return The list of materialized keys within the {@link #mergeRange}, or return null if source exceeded the
+     * materialized keys limit.
      */
     private List<PrimaryKey> materializeKeysAndCloseSource(KeyRangeIterator source)
     {
@@ -440,7 +446,10 @@ public class QueryController
                     break;
                 primaryKeys.add(next);
                 if (MAX_MATERIALIZED_KEYS < ++count)
-                    throw new QueryMaterializesTooManyPrimaryKeysException("Too many primary keys. Attempted to load more than: " + MAX_MATERIALIZED_KEYS);
+                {
+                    Tracing.trace("WHERE clause generated more than {} rows. Switching to ORDER BY then post filter.",  MAX_MATERIALIZED_KEYS);
+                    return null;
+                }
             }
             return primaryKeys;
         }
