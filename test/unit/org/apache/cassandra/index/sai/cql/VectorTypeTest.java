@@ -36,7 +36,6 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.sai.StorageAttachedIndex;
 import org.apache.cassandra.index.sai.plan.QueryController;
-import org.apache.cassandra.index.sai.plan.QueryMaterializesTooManyPrimaryKeysException;
 import org.apache.cassandra.service.ClientWarn;
 
 import static org.assertj.core.api.Assertions.assertThat;
