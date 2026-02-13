@@ -20,6 +20,10 @@ package org.apache.cassandra.index.sai.utils;
 
 import java.nio.ByteBuffer;
 
+import javax.annotation.Nonnull;
+
+import com.google.common.base.Function;
+
 import org.apache.cassandra.db.DeletionPurger;
 import org.apache.cassandra.db.Digest;
 import org.apache.cassandra.db.marshal.ValueAccessor;
@@ -135,6 +139,12 @@ public class CellWithSource<T> extends Cell<T>
     }
 
     @Override
+    public Cell<?> withUpdatedTimestamp(long newTimestamp)
+    {
+        return wrapIfNew(cell.withUpdatedTimestamp(newTimestamp));
+    }
+
+    @Override
     public Cell<?> withUpdatedTimestampAndLocalDeletionTime(long newTimestamp, long newLocalDeletionTime)
     {
         return wrapIfNew(cell.withUpdatedTimestampAndLocalDeletionTime(newTimestamp, newLocalDeletionTime));
@@ -191,14 +201,19 @@ public class CellWithSource<T> extends Cell<T>
     @Override
     public ColumnData updateAllTimestamp(long newTimestamp)
     {
-        ColumnData maybeNewCell = cell.updateAllTimestamp(newTimestamp);
-        if (maybeNewCell instanceof Cell)
-            return wrapIfNew((Cell<?>) maybeNewCell);
-        if (maybeNewCell instanceof ComplexColumnData)
-            return ((ComplexColumnData) maybeNewCell).transform(this::wrapIfNew);
-        // It's not clear when we would hit this code path, but it seems we should not
-        // hit this from SAI.
-        throw new IllegalStateException("Expected a Cell instance, but got " + maybeNewCell);
+        return wrapIfNew(cell.updateAllTimestamp(newTimestamp));
+    }
+
+    @Override
+    public ColumnData updateTimesAndPathsForAccord(@Nonnull Function<Cell, CellPath> cellToMaybeNewListPath, long newTimestamp, long newLocalDeletionTime)
+    {
+        return wrapIfNew(cell.updateTimesAndPathsForAccord(cellToMaybeNewListPath, newTimestamp, newLocalDeletionTime));
+    }
+
+    @Override
+    public ColumnData updateAllTimesWithNewCellPathForComplexColumnData(@Nonnull CellPath maybeNewPath, long newTimestamp, long newLocalDeletionTime)
+    {
+        return wrapIfNew(cell.updateAllTimesWithNewCellPathForComplexColumnData(maybeNewPath, newTimestamp, newLocalDeletionTime));
     }
 
     @Override
@@ -230,6 +245,18 @@ public class CellWithSource<T> extends Cell<T>
     public long maxTimestamp()
     {
         return cell.maxTimestamp();
+    }
+
+    private ColumnData wrapIfNew(ColumnData maybeNewColumnData)
+    {
+        if (maybeNewColumnData instanceof Cell)
+            return wrapIfNew((Cell<?>) maybeNewColumnData);
+        if (maybeNewColumnData instanceof ComplexColumnData)
+            return ((ComplexColumnData) maybeNewColumnData).transform(this::wrapIfNew);
+
+        // It's not clear when we would hit this code path, but it seems we should not
+        // hit this from SAI.
+        throw new IllegalStateException("Expected a Cell or ComplexColumnData instance, but got " + maybeNewColumnData);
     }
 
     private Cell<?> wrapIfNew(Cell<?> maybeNewCell)
