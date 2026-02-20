@@ -513,7 +513,8 @@ public class CompactionGraph implements Closeable, Accountable
         onDiskVectorValuesWriter.flush();
 
         // Now that we're done adding rows, we can optimize the bitmap for runs since we expect many runs.
-        presentOrdinals.runOptimize();
+        if (presentOrdinals != null)
+            presentOrdinals.runOptimize();
 
         // If we haven't created the builder yet, it means we were accumulating vectors still. Force it to build
         // now.
