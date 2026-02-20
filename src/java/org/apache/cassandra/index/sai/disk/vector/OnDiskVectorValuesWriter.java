@@ -22,7 +22,6 @@ import java.io.UncheckedIOException;
 
 import io.github.jbellis.jvector.disk.BufferedRandomAccessWriter;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
-import org.agrona.collections.IntObjConsumer;
 import org.apache.cassandra.io.util.File;
 
 /**
