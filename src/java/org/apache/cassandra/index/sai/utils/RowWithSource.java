@@ -34,6 +34,7 @@ import org.apache.cassandra.db.DeletionPurger;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.Digest;
 import org.apache.cassandra.db.LivenessInfo;
+import org.apache.cassandra.db.CellSourceIdentifier;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.Cell;
@@ -51,17 +52,18 @@ import org.apache.cassandra.utils.SearchIterator;
 import org.apache.cassandra.utils.memory.Cloner;
 
 /**
- * A Row wrapper that has a source object that gets added to cell as part of the getCell call. This can only be used
- * validly when all the cells share a common source object.
+ * A Row wrapper that has a {@link CellSourceIdentifier} that gets added to cell as part of the
+ * {@link #getCell(ColumnMetadata)} and {@link #getCell(ColumnMetadata, CellPath)} calls. This class
+ * can only be initiallized validly when all the cells share a common {@link CellSourceIdentifier}.
  */
 public class RowWithSource implements Row
 {
     private static final long EMPTY_SIZE = ObjectSizes.measure(new RowWithSource(null, null));
 
     private final Row row;
-    private final Object source;
+    private final CellSourceIdentifier source;
 
-    public RowWithSource(Row row, Object source)
+    public RowWithSource(Row row, CellSourceIdentifier source)
     {
         assert source instanceof Memtable || source instanceof SSTableId || (source == null && row == null) : "Expected Memtable or SSTableId, got " + source;
         this.row = row;

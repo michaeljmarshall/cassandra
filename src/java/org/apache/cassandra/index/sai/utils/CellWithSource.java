@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.DeletionPurger;
 import org.apache.cassandra.db.Digest;
+import org.apache.cassandra.db.CellSourceIdentifier;
 import org.apache.cassandra.db.marshal.ValueAccessor;
 import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.Cell;
@@ -34,7 +35,7 @@ import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.ByteBufferCloner;
 
 /**
- * A wrapped {@link Cell} that includes a reference to the cell's source table.
+ * A wrapped {@link Cell} that includes a reference to the cell's source table via {@link CellSourceIdentifier}
  * @param <T> the type of the cell's value
  */
 public class CellWithSource<T> extends Cell<T>
@@ -42,22 +43,22 @@ public class CellWithSource<T> extends Cell<T>
     private static final long EMPTY_SIZE = ObjectSizes.measure(new CellWithSource<>(null, null, null));
 
     private final Cell<T> cell;
-    private final Object source;
+    private final CellSourceIdentifier source;
 
-    public CellWithSource(Cell<T> cell, Object source)
+    public CellWithSource(Cell<T> cell, CellSourceIdentifier source)
     {
         this(cell.column(), cell, source);
         assert source instanceof Memtable || source instanceof SSTableId : "Source has unexpected type: " + (source == null ? "null" : source.getClass());
     }
 
-    private CellWithSource(ColumnMetadata column, Cell<T> cell, Object source)
+    private CellWithSource(ColumnMetadata column, Cell<T> cell, CellSourceIdentifier source)
     {
         super(column);
         this.cell = cell;
         this.source = source;
     }
 
-    public Object sourceTable()
+    public CellSourceIdentifier sourceTable()
     {
         return source;
     }

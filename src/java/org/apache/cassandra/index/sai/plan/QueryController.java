@@ -40,6 +40,7 @@ import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
+import org.apache.cassandra.db.CellSourceIdentifier;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
@@ -74,7 +75,7 @@ import org.apache.cassandra.utils.Throwables;
 public class QueryController
 {
     // Transforms a row to include its source table, which is then used for ANN query validation.
-    private final static Function<Object, Transformation<BaseRowIterator<?>>> SOURCE_TABLE_ROW_TRANSFORMER = (Object sourceTable) -> new Transformation<>()
+    private final static Function<CellSourceIdentifier, Transformation<BaseRowIterator<?>>> SOURCE_TABLE_ROW_TRANSFORMER = (CellSourceIdentifier sourceTable) -> new Transformation<>()
     {
         @Override
         protected Row applyToStatic(Row row)

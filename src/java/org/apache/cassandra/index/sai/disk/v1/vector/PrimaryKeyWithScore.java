@@ -18,12 +18,11 @@
 
 package org.apache.cassandra.index.sai.disk.v1.vector;
 
-import org.apache.cassandra.db.memtable.Memtable;
+import org.apache.cassandra.db.CellSourceIdentifier;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.index.sai.utils.CellWithSource;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
-import org.apache.cassandra.io.sstable.SSTableId;
 import org.apache.cassandra.schema.ColumnMetadata;
 
 /**
@@ -36,20 +35,11 @@ public class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithScore>
 {
     protected final ColumnMetadata columnMetadata;
     private final PrimaryKey primaryKey;
-    // Either a Memtable reference or an SSTableId reference
-    private final Object sourceTable;
+    private final CellSourceIdentifier sourceTable;
 
     private final float indexScore;
 
-    public PrimaryKeyWithScore(ColumnMetadata columnMetadata, Memtable sourceTable, PrimaryKey primaryKey, float indexScore)
-    {
-        this.columnMetadata = columnMetadata;
-        this.sourceTable = sourceTable;
-        this.primaryKey = primaryKey;
-        this.indexScore = indexScore;
-    }
-
-    public PrimaryKeyWithScore(ColumnMetadata columnMetadata, SSTableId sourceTable, PrimaryKey primaryKey, float indexScore)
+    public PrimaryKeyWithScore(ColumnMetadata columnMetadata, CellSourceIdentifier sourceTable, PrimaryKey primaryKey, float indexScore)
     {
         this.columnMetadata = columnMetadata;
         this.sourceTable = sourceTable;
@@ -79,7 +69,7 @@ public class PrimaryKeyWithScore implements Comparable<PrimaryKeyWithScore>
             return false;
 
         assert cell instanceof CellWithSource : "Expected CellWithSource, got " + cell.getClass();
-        return sourceTable.equals(((CellWithSource<?>) cell).sourceTable());
+        return sourceTable.isEqualSource(((CellWithSource<?>) cell).sourceTable());
     }
 
     @Override

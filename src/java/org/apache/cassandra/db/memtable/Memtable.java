@@ -25,6 +25,7 @@ import javax.annotation.concurrent.NotThreadSafe;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
+import org.apache.cassandra.db.CellSourceIdentifier;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.db.partitions.Partition;
@@ -54,7 +55,7 @@ import org.apache.cassandra.utils.concurrent.OpOrder;
  *
  * See Memtable_API.md for details on implementing and using alternative memtable implementations.
  */
-public interface Memtable extends Comparable<Memtable>, UnfilteredSource
+public interface Memtable extends Comparable<Memtable>, UnfilteredSource, CellSourceIdentifier
 {
     public static final long NO_MIN_TIMESTAMP = -1;
 
