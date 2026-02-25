@@ -356,10 +356,12 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
     {
         int expectedNodesVisited = expectedNodesVisited(limit, nPermittedOrdinals, graphSize);
         int expectedComparisons = index.indexWriterConfig().getMaximumNodeConnections() * expectedNodesVisited;
-        // in-memory comparisons are cheaper than pulling a row off disk and then comparing
-        // VSTODO this is dramatically oversimplified
+        // Brute force here means reading each vector from the index file on disk, comparing the row's vector to the
+        // search vector to get a score, and then putting the results into a priority queue to then iterate over.
+        // Alternatively, we search the graph, which entails comparisons and disk reads. The goal is to reduce disk
+        // accesses and number of comparisons.
+        // VSTODO the below factor is dramatically oversimplified
         // larger dimension should increase this, because comparisons are more expensive
-        // lower chunk cache hit ratio should decrease this, because loading rows is more expensive
         double memoryToDiskFactor = 0.25;
         return (int) max(limit, memoryToDiskFactor * expectedComparisons);
     }
