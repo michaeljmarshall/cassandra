@@ -141,7 +141,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             try (QueryViewBuilder.QueryView queryView = buildAnnQueryView())
             {
                 queryController.maybeTriggerGuardrails(queryView);
-                ScoreOrderedResultRetriever result = new ScoreOrderedResultRetriever(queryController, executionController, queryContext, queryView, command.limits().count());
+                ScoreOrderedResultRetriever result = new ScoreOrderedResultRetriever(executionController, queryView);
                 // takeTopKThenSortByPrimaryKey eagerly consumes up to k rows from the result because search must
                 // produce an iterator in PrimaryKey order.
                 return (UnfilteredPartitionIterator) new VectorTopKProcessor(command).takeTopKThenSortByPrimaryKey(result);
@@ -169,7 +169,26 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         return new QueryViewBuilder(Collections.singleton(planExpression), queryController.mergeRange()).build();
     }
 
-    private class ResultRetriever extends AbstractIterator<UnfilteredRowIterator> implements UnfilteredPartitionIterator
+    private abstract class AbstractRetreiver extends AbstractIterator<UnfilteredRowIterator> implements UnfilteredPartitionIterator
+    {
+        final FilterTree filterTree;
+        final ReadExecutionController executionController;
+
+        AbstractRetreiver(ReadExecutionController executionController)
+        {
+            this.executionController = executionController;
+            this.filterTree = Operation.buildFilter(queryController, queryController.usesStrictFiltering());
+        }
+
+        @Override
+        public TableMetadata metadata()
+        {
+            return queryController.metadata();
+        }
+
+    }
+
+    private class ResultRetriever extends AbstractRetreiver
     {
         private final PrimaryKey firstPrimaryKey;
         private final PrimaryKey lastPrimaryKey;
@@ -178,8 +197,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         private AbstractBounds<PartitionPosition> currentKeyRange;
 
         private final KeyRangeIterator resultKeyIterator;
-        private final FilterTree filterTree;
-        private final ReadExecutionController executionController;
         private final PrimaryKey.Factory keyFactory;
         private final int partitionRowBatchSize;
 
@@ -187,12 +204,11 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
 
         private ResultRetriever(ReadExecutionController executionController)
         {
+            super(executionController);
             this.keyRanges = queryController.dataRanges().iterator();
             this.firstDataRange = keyRanges.next();
             this.currentKeyRange = firstDataRange.keyRange();
             this.resultKeyIterator = Operation.buildIterator(queryController);
-            this.filterTree = Operation.buildFilter(queryController, queryController.usesStrictFiltering());
-            this.executionController = executionController;
             this.keyFactory = queryController.primaryKeyFactory();
             this.firstPrimaryKey = queryController.firstPrimaryKeyInRange();
             this.lastPrimaryKey = queryController.lastPrimaryKeyInRange();
@@ -498,12 +514,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         }
 
         @Override
-        public TableMetadata metadata()
-        {
-            return queryController.metadata();
-        }
-
-        @Override
         public void close()
         {
             FileUtils.closeQuietly(resultKeyIterator);
@@ -591,16 +601,12 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
      * The resulting {@link UnfilteredRowIterator} objects are not guaranteed to be in any particular order. It is
      * the responsibility of the caller to sort the results if necessary.
      */
-    public static class ScoreOrderedResultRetriever extends AbstractIterator<UnfilteredRowIterator> implements UnfilteredPartitionIterator
+    public class ScoreOrderedResultRetriever extends AbstractRetreiver
     {
         private final ColumnFamilyStore.ViewFragment view;
         private final List<AbstractBounds<PartitionPosition>> keyRanges;
         private final boolean coversFullRing;
         private final CloseableIterator<PrimaryKeyWithScore> scoredPrimaryKeyIterator;
-        private final FilterTree filterTree;
-        private final QueryController controller;
-        private final ReadExecutionController executionController;
-        private final QueryContext queryContext;
 
         private final boolean isVectorColumnStatic;
         private final HashSet<PrimaryKey> processedKeys;
@@ -613,28 +619,22 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         private final int softLimit;
         private int returnedRowCount = 0;
 
-        private ScoreOrderedResultRetriever(QueryController controller,
-                                            ReadExecutionController executionController,
-                                            QueryContext queryContext,
-                                            QueryViewBuilder.QueryView queryView,
-                                            int limit)
+        private ScoreOrderedResultRetriever(ReadExecutionController executionController,
+                                            QueryViewBuilder.QueryView queryView)
         {
+            super(executionController);
             assert queryView.view.size() == 1;
             QueryViewBuilder.QueryExpressionView queryExpressionView = queryView.view.stream().findFirst().get();
             this.view = queryExpressionView.computeViewFragment();
-            this.keyRanges = controller.dataRanges().stream().map(DataRange::keyRange).collect(Collectors.toList());
+            this.keyRanges = queryController.dataRanges().stream().map(DataRange::keyRange).collect(Collectors.toList());
             this.coversFullRing = keyRanges.size() == 1 && RangeUtil.coversFullRing(keyRanges.get(0));
 
-            this.scoredPrimaryKeyIterator = Operation.buildIteratorForOrder(controller, queryExpressionView);
-            this.filterTree = Operation.buildFilter(controller, controller.usesStrictFiltering());
-            this.controller = controller;
-            this.executionController = executionController;
-            this.queryContext = queryContext;
+            this.scoredPrimaryKeyIterator = Operation.buildIteratorForOrder(queryController, queryExpressionView);
 
             this.isVectorColumnStatic = queryExpressionView.expression.getIndexTermType().columnMetadata().isStatic();
-            this.processedKeys = new HashSet<>(limit);
-            this.pendingRows = new ArrayDeque<>(limit);
-            this.softLimit = limit;
+            this.softLimit = command.limits().count();
+            this.processedKeys = new HashSet<>(softLimit);
+            this.pendingRows = new ArrayDeque<>(softLimit);
         }
 
         @Override
@@ -731,7 +731,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             while (scoredPrimaryKeyIterator.hasNext())
             {
                 PrimaryKeyWithScore key = scoredPrimaryKeyIterator.next();
-                if (isInRange(key.primaryKey().partitionKey()) && !controller.doesNotSelect(key.primaryKey()))
+                if (isInRange(key.primaryKey().partitionKey()) && !queryController.doesNotSelect(key.primaryKey()))
                     return key;
             }
             return null;
@@ -759,7 +759,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             if (processedKeys.contains(pk))
                 return null;
 
-            try (UnfilteredRowIterator partition = controller.queryStorage(pk, view, executionController))
+            try (UnfilteredRowIterator partition = queryController.queryStorage(pk, view, executionController))
             {
                 queryContext.partitionsRead++;
                 queryContext.checkpoint();
@@ -813,12 +813,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
                 // the old value ranks high in the iterator, but isn't the current value for the materialized row.
                 return null;
             }
-        }
-
-        @Override
-        public TableMetadata metadata()
-        {
-            return controller.metadata();
         }
 
         public void close()
