@@ -244,9 +244,10 @@ public class VectorMemoryIndex extends MemoryIndex
     private int maxBruteForceRows(int limit, int nPermittedOrdinals, int graphSize)
     {
         int expectedNodesVisited = expectedNodesVisited(limit, nPermittedOrdinals, graphSize);
-        // ANN index will do a bunch of extra work besides the full comparisons (performing PQ similarity for each edge);
-        // VSTODO I'm not sure which one is more expensive (and it depends on things like sstable chunk cache hit ratio)
-        // so I'm leaving it as a 1:1 ratio for now.
+        // ANN index will do a bunch of extra work besides the full comparisons
+        // VSTODO I'm not sure which one is more expensive, but since the graph is in memory and the vectors are
+        // full precision, the goal here is simple: minimize the number of vector comparisons (aka nodes visited).
+        // As such, the cost function weights them at a 1:1 ratio for now.
         return max(limit, expectedNodesVisited);
     }
 
