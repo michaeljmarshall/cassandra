@@ -60,6 +60,7 @@ import javax.management.NotificationListener;
 import javax.management.openmbean.CompositeData;
 import javax.management.openmbean.OpenDataException;
 import javax.management.openmbean.TabularData;
+import javax.management.openmbean.TabularDataSupport;
 
 import com.codahale.metrics.Meter;
 import com.google.common.annotations.VisibleForTesting;
@@ -105,6 +106,8 @@ import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.compaction.OperationType;
+import org.apache.cassandra.db.compression.CompressionDictionary.LightweightCompressionDictionary;
+import org.apache.cassandra.db.compression.CompressionDictionaryDetailsTabularData;
 import org.apache.cassandra.db.guardrails.Guardrails;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.dht.BootStrapper;
@@ -415,7 +418,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public Collection<Range<Token>> getLocalAndPendingRanges(String ks)
     {
-        return ClusterMetadata.current().localWriteRanges(Keyspace.open(ks).getMetadata());
+        return ClusterMetadata.current().localWriteRanges(Keyspace.open(ks).getMetadata()).ranges();
     }
 
     public OwnedRanges getNormalizedLocalRanges(String keyspaceName, InetAddressAndPort broadcastAddress)
@@ -4755,6 +4758,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         logger.info("updated tombstone_warn_threshold to {}", threshold);
     }
 
+    public int getWriteTombstoneWarnThreshold()
+    {
+        return DatabaseDescriptor.getWriteTombstoneWarnThreshold();
+    }
+
+    public void setWriteTombstoneWarnThreshold(int threshold)
+    {
+        DatabaseDescriptor.setWriteTombstoneWarnThreshold(threshold);
+        logger.info("updated write_tombstone_warn_threshold to {}", threshold);
+    }
+
     public int getTombstoneFailureThreshold()
     {
         return DatabaseDescriptor.getTombstoneFailureThreshold();
@@ -5326,6 +5340,30 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     }
 
     @Override
+    public boolean getWriteThresholdsEnabled()
+    {
+        return DatabaseDescriptor.getWriteThresholdsEnabled();
+    }
+
+    @Override
+    public void setWriteThresholdsEnabled(boolean value)
+    {
+        DatabaseDescriptor.setWriteThresholdsEnabled(value);
+    }
+
+    @Override
+    public String getWriteTooLargeWarnThreshold()
+    {
+        return toString(DatabaseDescriptor.getWriteSizeWarnThreshold());
+    }
+
+    @Override
+    public void setWriteTooLargeWarnThreshold(String threshold)
+    {
+        DatabaseDescriptor.setWriteSizeWarnThreshold(parseDataStorageSpec(threshold));
+    }
+
+    @Override
     public String getLocalReadTooLargeAbortThreshold()
     {
         return toString(DatabaseDescriptor.getLocalReadSizeFailThreshold());
@@ -5716,6 +5754,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     }
 
     @Override
+    public boolean getForceOptimizedIndexStatusFormat()
+    {
+        return DatabaseDescriptor.getForceOptimizedIndexStatusFormat();
+    }
+
+    @Override
+    public void setForceOptimizedIndexStatusFormat(boolean value)
+    {
+        DatabaseDescriptor.setForceOptimizedIndexStatusFormat(value);
+    }
+
+    @Override
     public void setPaxosRepairRaceWait(boolean paxosRepairRaceWait)
     {
         DatabaseDescriptor.setPaxosRepairRaceWait(paxosRepairRaceWait);
@@ -5781,5 +5831,26 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             sstablesTouched.addAll(result.stream().map(sst -> sst.descriptor.baseFile().name()).collect(Collectors.toList()));
         }
         return sstablesTouched;
+    }
+
+    @Override
+    public TabularData getOrphanedCompressionDictionaries()
+    {
+        List<LightweightCompressionDictionary> dicts = SystemDistributedKeyspace.retrieveOrphanedLightweightCompressionDictionaries();
+        TabularDataSupport tabularData = new TabularDataSupport(CompressionDictionaryDetailsTabularData.TABULAR_TYPE);
+
+        if (dicts.isEmpty())
+            return tabularData;
+
+        for (LightweightCompressionDictionary dict : dicts)
+            tabularData.put(CompressionDictionaryDetailsTabularData.fromLightweightCompressionDictionary(dict));
+
+        return tabularData;
+    }
+
+    @Override
+    public void clearOrphanedCompressionDictionaries()
+    {
+        SystemDistributedKeyspace.clearOrphanedCompressionDictionaries();
     }
 }
