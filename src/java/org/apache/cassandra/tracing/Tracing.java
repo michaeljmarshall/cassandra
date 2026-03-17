@@ -361,6 +361,12 @@ public abstract class Tracing extends ExecutorLocals.Impl
         state.trace(format, args);
     }
 
+    public static void logAndTrace(Logger logger, String message, Object... args)
+    {
+        logger.trace(message, args);
+        trace(message, args);
+    }
+
     /**
      * Called for non-local traces (traces that are not initiated by local node == coordinator).
      */
