@@ -181,12 +181,9 @@ public class V1SSTableIndex extends SSTableIndex
         // Return a list to allow the caller to merge the results from multiple sstables into a single iterator.
         List<CloseableIterator<PrimaryKeyWithScore>> iterators = new ArrayList<>(segments.size());
         for (Segment segment : segments)
-        {
             if (segment.intersects(keyRange))
-            {
                 iterators.add(segment.orderBy(orderer, keyRange, context));
-            }
-        }
+
         return iterators;
     }
 

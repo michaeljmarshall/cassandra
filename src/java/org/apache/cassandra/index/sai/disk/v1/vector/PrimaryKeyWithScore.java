@@ -27,7 +27,7 @@ import org.apache.cassandra.schema.ColumnMetadata;
 
 /**
  * A PrimaryKey with one piece of metadata. Subclasses define the metadata, and to prevent unnecessary boxing, the
- * metadata is not referenced in this calss. The metadata is not used to determine equality or hash code, but it is used
+ * metadata is not referenced in this class. The metadata is not used to determine equality or hash code, but it is used
  * to compare the PrimaryKey objects.
  * Note: this class has a natural ordering that is inconsistent with equals.
  */
