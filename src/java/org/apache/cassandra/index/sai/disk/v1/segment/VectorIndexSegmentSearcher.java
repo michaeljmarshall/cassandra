@@ -374,7 +374,7 @@ public class VectorIndexSegmentSearcher extends IndexSegmentSearcher
         assert expectedNodesVisited >= 0 : expectedNodesVisited;
         assert actualNodesVisited >= 0 : actualNodesVisited;
         if (actualNodesVisited >= 1000 && actualNodesVisited > 2 * expectedNodesVisited || expectedNodesVisited > 2 * actualNodesVisited)
-            Tracing.logAndTrace(logger, "Predicted visiting {} nodes, but actually visited {}", expectedNodesVisited, actualNodesVisited);
+            logger.trace("Predicted visiting {} nodes, but actually visited {}", expectedNodesVisited, actualNodesVisited);
         actualExpectedRatio.update(actualNodesVisited, expectedNodesVisited);
     }
 
